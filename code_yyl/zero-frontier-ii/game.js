@@ -18,7 +18,8 @@ const BLEED_DURATION=3,BLEED_INTERVAL=1,BLEED_DAMAGE=3;
 // Tag each existing hit sphere; the nearest visible surface decides the hit zone.
 const ENEMY_HIT_ZONES=[[0,0,0,.79,'body'],[0,.83,0,.32,'head'],[-.28,-.91,.12,.27,'body'],[.28,-.91,.12,.27,'body']];
 const DOG_HIT_ZONES=[[0,-.13,-.13,.53,'body'],[0,.12,.47,.38,'head'],[0,-.01,.81,.22,'head'],[-.325,-.64,.53,.23,'body'],[.325,-.64,.53,.23,'body'],[-.368,-.65,-.32,.21,'body'],[.368,-.65,-.32,.21,'body']];
-const ENEMY_TYPES={milk:{baseY:1.15,radius:.8,speed:1},dog:{baseY:.80,radius:.58,speed:3.3}};
+const WITCH_HIT_ZONES=[[0,-.14,0,.51,'body'],[0,-.65,.015,.39,'body'],[0,.815,.015,.36,'head'],[0,.77,.36,.17,'head'],[-.34,.20,.28,.25,'body'],[.34,.20,.28,.25,'body'],[-.17,-.955,.08,.20,'body'],[.17,-.955,.08,.20,'body']];
+const ENEMY_TYPES={milk:{baseY:1.15,radius:.8,speed:1},dog:{baseY:.80,radius:.58,speed:3.3},witch:{baseY:1.05,radius:.58,speed:.65}};
 const HEADSHOT_COLOR=[1,.70,.30];
 const V=(x=0,y=0,z=0)=>({x,y,z}), length=v=>Math.hypot(v.x,v.y,v.z);
 const IDENTITY_MODEL=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
@@ -139,12 +140,194 @@ function buildOutpost(){
  for(const x of [-31,31])for(const z of [-27,0,27])mapAsset('outpost_tower',x,z,9,Math.PI/2);
  for(const p of [[-19,-25],[19,23]]){box(staticData,p[0],5,p[1],.35,10,.35,dark);box(staticData,p[0],9.9,p[1],2,.18,2,trim,1);}
 }
+/* Static map finish pass. Requires only box(); never mutates collision walls.
+ * Integrate inside activateMap's cache miss, after buildX() and before mesh(staticData):
+ *   polishMapScene(currentMap.id, staticData, walls);
+ * No runtime update/render hook is needed. All dimensions are world metres.
+ */
+function mapPolishRect(out,x,y,z,w,h,color,emission=0,yaw=0,vertical=false){
+ const cs=Math.cos(yaw),sn=Math.sin(yaw),normal=vertical?[sn,0,cs]:[0,1,0];
+ for(const [u,v]of [[-.5,-.5],[.5,-.5],[.5,.5],[-.5,-.5],[.5,.5],[-.5,.5]]){
+  const px=u*w,pz=vertical?0:v*h;
+  out.push(x+px*cs+pz*sn,y+(vertical?v*h:0),z+pz*cs-px*sn,...normal,...color,emission);
+ }
+}
+function mapPolishPipe(out,a,b,r,color){
+ const delta=b.map((v,i)=>v-a[i]),length=Math.hypot(...delta),n=delta.map(v=>v/length),basis=Math.abs(n[1])<.9?[0,1,0]:[1,0,0];
+ let u=[n[1]*basis[2]-n[2]*basis[1],n[2]*basis[0]-n[0]*basis[2],n[0]*basis[1]-n[1]*basis[0]],size=Math.hypot(...u);u=u.map(v=>v/size);
+ const v=[n[1]*u[2]-n[2]*u[1],n[2]*u[0]-n[0]*u[2],n[0]*u[1]-n[1]*u[0]];
+ const vertex=(point,normal)=>out.push(...point,...normal,...color,0);
+ for(let i=0;i<6;i++){
+  const angle=i*Math.PI/3,next=(i+1)*Math.PI/3,na=u.map((q,k)=>q*Math.cos(angle)+v[k]*Math.sin(angle)),nb=u.map((q,k)=>q*Math.cos(next)+v[k]*Math.sin(next));
+  const p=a.map((q,k)=>q+na[k]*r),q=a.map((q,k)=>q+nb[k]*r),s=b.map((q,k)=>q+na[k]*r),t=b.map((q,k)=>q+nb[k]*r);
+  for(const [point,normal]of [[p,na],[q,nb],[t,nb],[p,na],[t,nb],[s,na]])vertex(point,normal);
+  for(const point of [a,q,p])vertex(point,n.map(k=>-k));for(const point of [b,s,t])vertex(point,n);
+ }
+}
+function mapPolishArrow(out,x,z,yaw,color,scale=1){
+ const cs=Math.cos(yaw),sn=Math.sin(yaw),at=(dx,dz)=>[x+dx*cs+dz*sn,z+dz*cs-dx*sn];
+ const shaft=at(0,.30*scale);mapPolishRect(out,shaft[0],.043,shaft[1],.22*scale,1.22*scale,color,0,yaw);
+ for(const [dx,dz]of [[-.58,-.12],[.58,-.12],[0,-.82]]){const p=at(dx*scale,dz*scale);out.push(p[0],.043,p[1],0,1,0,...color,0);}
+}
+function mapPolishNumber(out,x,y,z,text,height,color,yaw=0,vertical=true){
+ const segments={0:'abcedf',1:'bc',2:'abged',3:'abgcd',4:'fgbc',5:'afgcd',6:'afgecd',7:'abc',8:'abcdefg',9:'abfgcd'};
+ const positions={a:[0,.43,.46,.075],b:[.245,.225,.075,.36],c:[.245,-.225,.075,.36],d:[0,-.43,.46,.075],e:[-.245,-.225,.075,.36],f:[-.245,.225,.075,.36],g:[0,0,.46,.075]};
+ const cs=Math.cos(yaw),sn=Math.sin(yaw),stride=.70*height;
+ for(let digit=0;digit<text.length;digit++)for(const segment of segments[text[digit]]||''){
+  const [px,py,w,h]=positions[segment],dx=(digit-(text.length-1)/2)*stride+px*height,dz=vertical?0:-py*height;
+  mapPolishRect(out,x+dx*cs+dz*sn,y+(vertical?py*height:0),z+dz*cs-dx*sn,w*height,h*height,color,0,yaw,vertical);
+ }
+}
+function mapPolishWallPanel(out,wall,colors,number){
+ const {dark,mid,light,accent}=colors;
+ // Framing follows the original solid's footprint; shallow overlays add no new cover.
+ box(out,wall.x,wall.h+.035,wall.z,wall.w+.055,.07,wall.d+.055,dark);
+ for(const side of [-1,1]){
+  const z=wall.z+side*(wall.d/2+.026),yaw=side<0?Math.PI:0,width=Math.max(.2,wall.w-.24);
+  mapPolishRect(out,wall.x,wall.h*.51,z,width,wall.h*.78,mid,0,yaw,true);
+  mapPolishRect(out,wall.x,wall.h*.12,z+side*.005,width,.075,dark,0,yaw,true);
+  mapPolishRect(out,wall.x,wall.h*.88,z+side*.005,width,.06,light,0,yaw,true);
+  for(let x=-wall.w/2+.45;x<wall.w/2-.2;x+=1.05)mapPolishRect(out,wall.x+x,wall.h*.5,z+side*.009,.024,wall.h*.70,dark,0,yaw,true);
+  if(wall.w>2.8&&wall.h>1.8){
+   mapPolishRect(out,wall.x,wall.h*.68,z+side*.016,1.25,.72,dark,0,yaw,true);
+   mapPolishNumber(out,wall.x,wall.h*.68,z+side*.024,String(number).padStart(2,'0'),.49,accent,yaw);
+  }
+ }
+ for(const side of [-1,1]){
+  const x=wall.x+side*(wall.w/2+.027),yaw=side*Math.PI/2;
+  mapPolishRect(out,x,wall.h*.16,wall.z,Math.max(.1,wall.d-.25),.10,dark,0,yaw,true);
+  mapPolishRect(out,x+side*.005,wall.h*.84,wall.z,Math.max(.1,wall.d-.25),.045,light,0,yaw,true);
+ }
+}
+function polishMapScene(mapId,out,collisionWalls){
+ const start=out.length,rect=(x,y,z,w,d,c,e=0,yaw=0,vertical=false)=>mapPolishRect(out,x,y,z,w,d,c,e,yaw,vertical);
+ const clear=(x,z,r=.2)=>!collisionWalls.some(b=>x+r>b.x-b.w/2&&x-r<b.x+b.w/2&&z+r>b.z-b.d/2&&z-r<b.z+b.d/2);
+ const wallAt=(x,z)=>collisionWalls.find(b=>Math.abs(b.x-x)<.001&&Math.abs(b.z-z)<.001);
+ const paper=[.82,.86,.79],coal=[.11,.16,.18],steel=[.37,.46,.47],amber=[.88,.65,.27],blue=[.19,.56,.69];
+ // Two shallow contact bands anchor the existing solid cover to the ground.
+ for(const w of collisionWalls)if(Math.abs(w.x)<22&&Math.abs(w.z)<27&&w.w>.9&&w.d>.9){
+  rect(w.x,.025,w.z,w.w+.55,w.d+.55,mapId==='ruins'?[.24,.23,.17]:mapId==='outpost'?[.11,.14,.20]:[.18,.23,.24]);
+  rect(w.x,.027,w.z,w.w+.22,w.d+.22,mapId==='ruins'?[.19,.18,.13]:[.12,.16,.18]);
+ }
+ if(mapId==='training'){
+  // An asphalt spine, two aggregate yards, and short painted loading bays.
+  rect(0,-.002,-.5,8.8,54,[.18,.25,.27]);
+  rect(-14,-.003,-.5,16,54,[.29,.35,.34]);rect(14,-.003,-.5,16,54,[.27,.32,.31]);
+  for(const x of [-4.55,4.55])for(let z=-25;z<27;z+=3.6)if(clear(x,z,.18))rect(x,.037,z,.10,1.55,paper);
+  for(const z of [-23,-12,5,17,24])if(clear(0,z,1))mapPolishArrow(out,0,z,0,[.75,.79,.62],1.1);
+  mapPolishNumber(out,0,.043,22,'01',1.8,paper,0,false);
+  for(const [x,z,w,d]of [[-12,3,5.4,9.3],[11,-9,6.4,10.3],[-11,-18,6.4,8.3],[14,14,5.4,8.3]]){
+   for(const side of [-1,1]){rect(x+side*w/2,.039,z,.10,d,amber);rect(x,.039,z+side*d/2,w,.10,amber);}
+  }
+  let count=1;for(const [x,z]of [[-12,3],[11,-9],[-11,-18],[14,14],[3,-18]]){const w=wallAt(x,z);if(w)mapPolishWallPanel(out,w,{dark:coal,mid:count%2?[.29,.37,.37]:[.29,.34,.27],light:steel,accent:paper},count++);}
+  for(const x of [-22.44,22.44]){
+   const yaw=x>0?-Math.PI/2:Math.PI/2;
+   for(const [n,z]of [[1,-22.5],[2,-8.5],[3,5.5],[4,19.5]]){
+    rect(x,1.9,z,4.9,2.3,[.30,.39,.40],0,yaw,true);rect(x+(x>0?-.006:.006),1.0,z,4.9,.09,coal,0,yaw,true);
+    rect(x+(x>0?-.01:.01),2.90,z,4.9,.08,[.52,.60,.55],0,yaw,true);
+    mapPolishNumber(out,x+(x>0?-.018:.018),2.02,z,String(n).padStart(2,'0'),.60,paper,yaw);
+   }
+   mapPolishPipe(out,[x,3.16,-24],[x,3.16,24],.065,coal);
+  }
+  for(let i=0;i<9;i++){const x=-36+i*9,h=9+i%3*4;box(out,x,h/2,-42,6,h,5,[.20,.29,.32]);for(let y=4;y<h;y+=2.8)rect(x,y,-39.47,4,.19,i%2?[.83,.61,.35]:[.47,.65,.66],1,0,true);mapPolishPipe(out,[x,h,-42],[x,h+2.4,-42],.04,coal);}
+ }else if(mapId==='harbor'){
+  rect(0,-.002,0,8,54,[.19,.25,.28]);rect(-17,-.003,0,9,54,[.31,.36,.37]);rect(17,-.003,0,9,54,[.28,.32,.33]);
+  for(const x of [-20.5,20.5]){
+   rect(x,.029,0,.44,53,[.11,.18,.22]);
+   for(let z=-26;z<27;z+=.72)if(clear(x,z,.26))rect(x,.033,z,.36,.12,steel);
+  }
+  for(const x of [-2.75,2.75]){rect(x,.031,0,.07,52,[.46,.49,.44]);rect(x+.10,.032,0,.026,52,[.10,.17,.20]);}
+  for(const z of [-23,-7,8,22])if(clear(0,z,1))mapPolishArrow(out,0,z,0,[.96,.69,.28],1.2);
+  for(const [n,x,z]of [[1,-11,-6],[2,12,8],[3,12,-17],[4,-12,17]]){
+   const w=wallAt(x,z);if(w)mapPolishWallPanel(out,w,{dark:[.11,.22,.26],mid:n%2?[.18,.37,.42]:[.44,.25,.17],light:[.58,.57,.40],accent:[.92,.84,.63]},n);
+  }
+  // Warehouse wall and trusses are beyond the existing northern boundary.
+  box(out,1,4.5,-37,39,9,9,[.21,.30,.34]);box(out,1,9.1,-37,40,.3,10,[.12,.20,.24]);
+  for(const x of [-15,-7,1,9,17]){
+   box(out,x,4.4,-32.43,.16,8.8,.18,[.42,.49,.48]);rect(x,7.0,-32.32,5.5,1.1,[.30,.51,.59],.35,0,true);
+   for(let k=0;k<4;k++)rect(x-1.8+k*1.2,7.0,-32.30,.06,1.1,coal,0,0,true);
+  }
+  for(const x of [-20,20])for(let y=4.5;y<12;y+=2.8){mapPolishPipe(out,[x-.30,y,-26.48],[x+.30,y+2.6,-26.48],.045,[.39,.29,.16]);}
+  for(const x of [-22.44,22.44])for(const [n,z]of [[1,-21.5],[2,-.5],[3,20.5]]){
+   const yaw=x>0?-Math.PI/2:Math.PI/2;rect(x,2.5,z,2.3,1.15,[.77,.49,.17],0,yaw,true);mapPolishNumber(out,x+(x>0?-.008:.008),2.5,z,'0'+n,.7,coal,yaw);
+  }
+ }else if(mapId==='ruins'){
+  const stone=[.59,.55,.43],edge=[.27,.27,.20],sand=[.47,.43,.32],moss=[.28,.34,.19];
+  rect(-15,-.002,0,11,54,[.37,.36,.26]);rect(15,-.002,0,11,54,[.38,.34,.25]);
+  // Joints sit above the existing pavers, with unequal end chips instead of a grid decal.
+  for(let z=-24;z<25;z+=4)for(const x of [-2,2]){
+   rect(x,.029,z-1.73,3.68,.045,edge);rect(x-1.78,.029,z,.045,3.4,edge);
+   rect(x+.20,.030,z+.15,.035,2.1,[.34,.32,.24],0,.14);
+   rect(x-1.62,.031,z-1.48,.31,.27,sand,0,.23);
+  }
+  for(const [x,z]of [[-12,-9],[12,6],[-10,11],[10,-17],[-5,0],[5,0]]){
+   const w=wallAt(x,z);if(!w)continue;
+   box(out,x,w.h+.045,z,w.w+.08,.09,w.d+.08,stone);
+   for(const side of [-1,1]){
+    const yaw=side>0?0:Math.PI,pz=z+side*(w.d/2+.016);
+    for(let y=.42,row=0;y<w.h-.05;y+=.43,row++){
+     rect(x,y,pz,w.w-.05,.024,edge,0,yaw,true);
+     for(let px=-w.w/2+.6+(row%2)*.5;px<w.w/2-.1;px+=1.05)rect(x+px,y-.21,pz+side*.004,.026,.39,edge,0,yaw,true);
+    }
+    for(let n=0;n<5;n++){
+     const px=x+(n-2)*w.w*.18,pzz=pz+side*(.16+(n%2)*.10);
+     box(out,px,.055,pzz,.24+(n%2)*.12,.10,.19,sand,0,n*.43);
+    }
+   }
+   for(const side of [-1,1]){
+    const px=x+side*(w.w/2+.017),yaw=side*Math.PI/2;
+    for(let y=.42;y<w.h-.05;y+=.43)rect(px,y,z,w.d-.04,.025,edge,0,yaw,true);
+   }
+  }
+  for(const z of [-7,17])for(const x of [-6,6]){
+   for(const y of [.18,1.3,2.45,3.65])box(out,x,y,z,1.36,.055,1.36,[.35,.34,.26]);
+   rect(x,4.99,z,1.55,1.55,[.69,.62,.46]);
+  }
+  for(const [x,z]of [[-13.3,-11],[-13.3,-6],[13.3,4],[13.3,9],[-8,12],[8,-18],[-4,1.65],[4,-1.65],[-20,17],[20,-17]]){
+   rect(x,.034,z,.80,.58,moss,0,.3);
+   for(let n=0;n<5;n++){
+    const px=x+(n-2)*.14,pz=z+((n*7)%3-1)*.12,h=.14+(n%3)*.04;
+    mapPolishRect(out,px,h/2,pz,.07,h,n%2?[.36,.41,.23]:moss,0,n*.7,true);
+   }
+  }
+  // Distant fragments frame the arches without inserting obstacles into the arena.
+  for(const [x,z,h]of [[-29,-15,7],[29,8,8],[-27,23,6],[28,-28,9]]){box(out,x,h/2,z,2.8,h,2.8,[.37,.37,.30]);box(out,x,h,z,3.3,.42,3.3,stone);}
+ }else if(mapId==='outpost'){
+  const dark=[.08,.13,.22],panel=[.25,.31,.43],rim=[.39,.48,.58],cyan=[.21,.75,.91],violet=[.52,.45,.76];
+  for(let z=-24;z<=24;z+=6)for(const x of [-18,-12,-6,0,6,12,18])if(clear(x,z,2.15)){
+   rect(x,-.002,z,4.8,4.8,(Math.abs(x)+Math.abs(z))%12?[.18,.25,.35]:[.24,.29,.39]);
+   for(const side of [-1,1]){rect(x+side*2.2,.026,z,.034,4.4,dark);rect(x,.026,z+side*2.2,4.4,.034,dark);}
+   rect(x-1.75,.028,z+1.75,.45,.08,rim);
+  }
+  for(const z of [-23,-15,8,21])for(const x of [-6,6])if(clear(x,z,.8))mapPolishArrow(out,x,z,0,cyan,.75);
+  for(const [n,x,z]of [[1,-12,-15],[2,12,14],[3,9,-13],[4,-8,10]]){const w=wallAt(x,z);if(w)mapPolishWallPanel(out,w,{dark,mid:panel,light:rim,accent:cyan},n);}
+  for(const side of [-1,1]){
+   // Dark ribs break the original broad reactor light into recessed power channels.
+   const x=side*2.506,yaw=side*Math.PI/2;rect(x,2.45,-4,2.9,3.05,dark,0,yaw,true);
+   for(const offset of [-.96,-.32,.32,.96])rect(x+side*.006,2.45,-4+offset,.12,2.65,cyan,1,yaw,true);
+   for(const y of [1.05,3.8])rect(x+side*.010,y,-4,2.6,.045,rim,0,yaw,true);
+  }
+  for(const z of [-6.507,-1.493]){rect(0,2.45,z,2.9,3.05,dark,0,z<-4?Math.PI:0,true);for(const px of [-.96,-.32,.32,.96])rect(px,2.45,z+(z<-4?-.006:.006),.12,2.65,cyan,1,z<-4?Math.PI:0,true);}
+  for(const x of [-22.44,22.44])for(const [n,z]of [[1,-21],[2,-7],[3,14]]){
+   const side=x>0?-1:1,yaw=side*Math.PI/2;
+   rect(x,1.75,z,2.0,1.28,dark,0,yaw,true);rect(x+side*.010,1.88,z,1.64,.80,[.13,.36,.44],0,yaw,true);
+   for(let row=0;row<4;row++)rect(x+side*.017,1.63+row*.17,z-.10+(row%2)*.12,1.1-row*.13,.045,row%2?cyan:paper,.5,yaw,true);
+   mapPolishNumber(out,x+side*.022,2.72,z,'0'+n,.48,violet,yaw);
+   for(const offset of [-.50,0,.50])rect(x+side*.018,1.28,z+offset,.20,.09,cyan,.5,yaw,true);
+  }
+  for(const x of [-22.42,22.42])mapPolishPipe(out,[x,3.25,-25],[x,3.25,25],.055,[.13,.20,.30]);
+  for(const x of [-30,30])for(const z of [-18,6,25]){box(out,x,5,z,3.5,10,3.5,dark);box(out,x,10.1,z,3.7,.16,3.7,cyan,1);mapPolishPipe(out,[x,10.2,z],[x,13,z],.045,rim);}
+ }
+ return {map:mapId,triangles:(out.length-start)/30};
+}
+
 function activateMap(id){
  currentMap=MAP_DEFINITIONS[id]||MAP_DEFINITIONS.training;
  let scene=mapSceneCache.get(currentMap.id);
  if(!scene){
   staticData.length=0;walls.length=0;
   if(currentMap.id==='training')buildTraining();else if(currentMap.id==='harbor')buildHarbor();else if(currentMap.id==='ruins')buildRuins();else buildOutpost();
+  polishMapScene(currentMap.id,staticData,walls);
   scene={arena:mesh(staticData),walls:walls.slice()};mapSceneCache.set(currentMap.id,scene);
  }
  arena=scene.arena;walls.length=0;walls.push(...scene.walls);
@@ -319,11 +502,13 @@ function playHeadshotKillSound(){playCombatBuffer('headKill',.44,0);}
 function showNotice(txt,duration=2.4){$('notice').textContent=txt;noticeTimer=duration;$('notice').classList.add('visible');}
 function spawnWave(){
  enemies=[];const count=[4,6,8][wave-1],spots=currentMap.enemies;let dogs=0;
+ let witchIndex=count-1;while((witchIndex+wave)%3===0)witchIndex--;
  for(let i=0;i<count;i++){
-  const [x,z]=spots[i],type=(i+wave)%3===0?'dog':'milk',dog=type==='dog';if(dog)dogs++;
-  enemies.push({x,z,type,y:ENEMY_TYPES[type].baseY,hp:dog?(difficulty==='easy'?18:24):(difficulty==='easy'?2:3),phase:rnd(0,6),attack:dog?(1.8+i*.4)/2:(1.8+i*.4+MILK_CHARGE)/MILK_ATTACK_RATE-MILK_CHARGE,flash:0,yaw:0,id:i,clawPhase:'idle',clawTimer:0,clawProgress:0,attackSide:1,strikeDone:false,casting:false,castPhase:'idle',castTimer:0,castProgress:0});
+  const [x,z]=spots[i],type=i===witchIndex?'witch':(i+wave)%3===0?'dog':'milk',dog=type==='dog';if(dog)dogs++;
+  const maxHp=dog?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);
+  enemies.push({x,z,type,y:ENEMY_TYPES[type].baseY,hp:maxHp,maxHp,phase:rnd(0,6),attack:dog?(1.8+i*.4)/2:type==='witch'?0:(1.8+i*.4+MILK_CHARGE)/MILK_ATTACK_RATE-MILK_CHARGE,flash:0,yaw:0,id:i,clawPhase:'idle',clawTimer:0,clawProgress:0,attackSide:1,strikeDone:false,casting:false,castPhase:'idle',castTimer:0,castProgress:0,supported:false,supportPulse:0,supportTimer:0,lastSupportHeal:-Infinity});
  }
- showNotice(`第 0${wave} 波 / 奶蛙 ${count-dogs} · 刀盾狗 ${dogs}`,3);tone(420,.15,'sine');setTimeout(()=>{if(state==='playing')tone(650,.25,'sine');},160);
+ showNotice(`第 0${wave} 波 / 奶蛙 ${count-dogs-1} · 刀盾狗 ${dogs} · 女巫 1`,3);tone(420,.15,'sine');setTimeout(()=>{if(state==='playing')tone(650,.25,'sine');},160);
 }
 function begin(){syncMobileOrientation();clearTouchInput();if(!touchDevice()&&document.pointerLockElement!==canvas){requestLock('start');return;}akTracers.length=0;difficulty=$('difficulty').value;player={x:currentMap.spawn[0],y:STANDING_EYE_HEIGHT,z:currentMap.spawn[1],yaw:0,pitch:0,hp:100,bleedUntil:0,bleedNextTick:0,vx:0,vz:0,horizontalSpeed:0,vy:0,ground:true,feetY:0,eyeHeight:STANDING_EYE_HEIGHT,crouching:false};activeWeapon='ak';previousWeapon='knife';weaponSwitch=null;queuedWeapon=null;knifeAttackTimer=0;knifeStrikePending=false;knifeSwings=0;knifeHits=0;wave=1;score=0;kills=0;shots=0;hits=0;headshots=0;headshotKills=0;headshotTimer=0;lastHitHeadshot=false;elapsed=0;ammo=30;reserve=180;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;fire=false;keys={};bullets=[];particles=[];pickups=currentMap.supplies.map(([x,z])=>({x,z,phase:0}));touchMove=V();$('menu').classList.add('hidden');$('pauseMenu').classList.add('hidden');$('endMenu').classList.add('hidden');$('hud').classList.remove('hidden');document.body.classList.add('playing');state='playing';prepareCombatAudio();spawnWave();tone(280,.18,'triangle',.03,250);updateHUD();}
 function lockFailed(error,generation){if(generation!==lockGeneration||!pendingLock)return;$('lockMenu').classList.remove('hidden');$('lockMessage').textContent=state==='paused'?'鼠标未能重新锁定，游戏保持暂停。':'当前窗口未能锁定鼠标，游戏尚未开始。';$('lockDetails').textContent=`请在 Chrome / Edge 独立窗口打开游戏地址 ${gameAddress}，再点击开始行动，或点击下方按钮重试。`;$('retryLockBtn').disabled=false;document.body.dataset.lockError=error?.name||'PointerLockError';console.warn('Pointer lock unavailable:',error?.name,error?.message);}
@@ -536,7 +721,7 @@ function traceEnemy(direction,range=100,allowInside=false){
  const wall=wallDistance(player,direction);let nearest=Math.min(range,wall),target=null,zone=null;
  for(const enemy of enemies){
   const cs=Math.cos(enemy.yaw),sn=Math.sin(enemy.yaw);
-  for(const [dx,height,dz,radius,hitZone] of (enemyKind(enemy)==='dog'?DOG_HIT_ZONES:ENEMY_HIT_ZONES)){
+  for(const [dx,height,dz,radius,hitZone] of (enemyKind(enemy)==='dog'?DOG_HIT_ZONES:enemyKind(enemy)==='witch'?WITCH_HIT_ZONES:ENEMY_HIT_ZONES)){
    const center=V(enemy.x+dx*cs+dz*sn,enemy.y+height,enemy.z+dz*cs-dx*sn),offset=sub(player,center),projection=dot(offset,direction),disc=projection*projection-dot(offset,offset)+radius*radius;
    if(disc<0)continue;
    const root=Math.sqrt(disc),entry=-projection-root,exit=-projection+root;
@@ -548,11 +733,12 @@ function traceEnemy(direction,range=100,allowInside=false){
 }
 function defeatEnemy(target,headshot=false){
  const index=enemies.indexOf(target);if(index<0)return;
- const dog=enemyKind(target)==='dog';score+=dog?200+wave*40:100+wave*25;kills++;
+ const kind=enemyKind(target),dog=kind==='dog';score+=dog?200+wave*40:kind==='witch'?150+wave*30:100+wave*25;kills++;
  if(headshot){score+=HEADSHOT_KILL_BONUS;headshotKills++;}
  burst(target.x,target.y,target.z,headshot?HEADSHOT_COLOR:palettes.lime,18);
  if(dog||kills%3===0)pickups.push({x:target.x,y:.45,z:target.z,phase:0,health:dog?40:25,ammo:dog?45:30,kind:dog?'dog':'milk'});
  enemies.splice(index,1);
+ if(kind==='witch')refreshEnemySupport();
  if(headshot)playHeadshotKillSound();else tone(210,.22,'sawtooth',.035,-140);
 }
 function swingKnife(){
@@ -651,8 +837,42 @@ function updateHUD(){
  setHudText('health',Math.ceil(player.hp));setHudStyle('healthFill','width',player.hp+'%');setHudStyle('healthFill','background',player.hp<30?'#ff6767':'');setHudText('ammo',knife?'∞':String(ammo).padStart(2,'0'));setHudText('reserve',String(reserve).padStart(3,'0'));setHudText('wave',`0${wave} / 03`);setHudText('remaining',String(enemies.length).padStart(2,'0'));setHudText('score',String(score).padStart(5,'0'));setHudText('timer',formatTime(elapsed));setHudClass('reloadBar','hidden',reload<=0);setHudStyle('reloadFill','width',clamp(Math.round((1-reload/1.65)*100),0,100)+'%');}
 const DOG_WINDUP=.16,DOG_STRIKE=.08,DOG_RECOVER=.24,DOG_HIT_TIME=.0175,DOG_ATTACK_RANGE=2.22,DOG_HIT_RANGE=2.34;
 const MILK_CHARGE=.24,MILK_RELEASE=.20,MILK_ORB_SPEED=35,MILK_ATTACK_RATE=1.5;
-function enemyKind(enemy){return enemy.type==='dog'?'dog':'milk';}
+const WITCH_SUPPORT_RADIUS=7,WITCH_HEAL_INTERVAL=2,WITCH_HEAL_AMOUNT=1,WITCH_ATTACK_RATE=1.2;
+function enemyKind(enemy){return enemy.type==='dog'?'dog':enemy.type==='witch'?'witch':'milk';}
 function enemySettings(enemy){return ENEMY_TYPES[enemyKind(enemy)];}
+function witchCanSupport(source,target){
+ if(source===target||source.hp<=0||target.hp<=0||enemyKind(source)!=='witch')return false;
+ if(Math.hypot(target.x-source.x,target.z-source.z)>WITCH_SUPPORT_RADIUS)return false;
+ const from=V(source.x,source.y+.25,source.z),to=V(target.x,target.y+.15,target.z),delta=sub(to,from),distance=length(delta);
+ return distance<1e-8||wallDistance(from,norm(delta))>distance-1e-6;
+}
+function refreshEnemySupport(){
+ for(const target of enemies){
+  target.supported=false;
+  for(const source of enemies)if(witchCanSupport(source,target)){target.supported=true;break;}
+ }
+}
+function updateWitchSupport(dt){
+ if(state!=='playing')return;
+ for(const source of enemies){
+  if(enemyKind(source)!=='witch'||source.hp<=0)continue;
+  source.supportTimer=(source.supportTimer||0)+dt;
+  if(source.supportTimer<WITCH_HEAL_INTERVAL-1e-9)continue;
+  // Start from the actual pulse frame so the per-target guard cannot skip the next heal.
+  // A slow frame produces one current pulse, never a burst of retrospective heals.
+  source.supportTimer=0;
+  for(const target of enemies){
+   if(!witchCanSupport(source,target)||!Number.isFinite(target.maxHp)||target.hp>=target.maxHp)continue;
+   if(elapsed-(target.lastSupportHeal??-Infinity)<WITCH_HEAL_INTERVAL-1e-9)continue;
+   target.hp=Math.min(target.maxHp,target.hp+WITCH_HEAL_AMOUNT);target.lastSupportHeal=elapsed;
+   target.supportPulse=1;source.supportPulse=1;
+  }
+ }
+}
+function updateWitchEnemy(enemy,dt){
+ enemy.yaw=Math.atan2(player.x-enemy.x,player.z-enemy.z);
+ enemyWalk(enemy,dt,((difficulty==='hard'?1.8:1.15)+wave*.16)*ENEMY_TYPES.witch.speed,6);
+}
 const ENEMY_NAV_STEP=.75,ENEMY_NAV_COLS=61,ENEMY_NAV_ROWS=75;
 const ENEMY_NAV_DIRECTIONS=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
 function resetEnemyNavigation(){
@@ -827,12 +1047,13 @@ function updateDogAttack(enemy,dt){
  }
 }
 function updateDogEnemy(enemy,dt){
+ const attackDt=dt*(enemy.supported?WITCH_ATTACK_RATE:1);
  if(!enemy.clawPhase)enemy.clawPhase='idle';
- if(enemy.clawPhase!=='idle'){enemy.walking=false;updateDogAttack(enemy,dt);return;}
+ if(enemy.clawPhase!=='idle'){enemy.walking=false;updateDogAttack(enemy,attackDt);return;}
  const dx=player.x-enemy.x,dz=player.z-enemy.z;enemy.yaw=Math.atan2(dx,dz);
  const speed=((difficulty==='hard'?1.8:1.15)+wave*.16)*ENEMY_TYPES.dog.speed;
  enemyWalk(enemy,dt,speed,1.35);
- enemy.attack=Math.max(0,enemy.attack-dt);
+ enemy.attack=Math.max(0,enemy.attack-attackDt);
  const distance=Math.hypot(player.x-enemy.x,player.z-enemy.z);
  if(enemy.attack<=0&&distance<=DOG_ATTACK_RANGE&&visible(V(enemy.x,enemy.y+.22,enemy.z),V(player.x,player.y-.3,player.z))){
   enemy.attackYaw=enemy.yaw;enemy.attackSide=-(enemy.attackSide||1);enemy.clawPhase='windup';enemy.clawTimer=0;enemy.clawProgress=0;enemy.strikeDone=false;enemy.walking=false;
@@ -854,9 +1075,10 @@ function launchMilkOrb(enemy){
  if(Math.hypot(player.x-enemy.x,player.z-enemy.z)<12)tone(360,.13,'sine',.020,-170);
 }
 function updateMilkEnemy(enemy,dt){
+ const attackDt=dt*(enemy.supported?WITCH_ATTACK_RATE:1);
  const dx=player.x-enemy.x,dz=player.z-enemy.z;enemy.yaw=Math.atan2(dx,dz);
  if(enemy.casting){
-  enemy.walking=false;enemy.castTimer+=dt;
+  enemy.walking=false;enemy.castTimer+=attackDt;
   if(enemy.castPhase==='charge'&&enemy.castTimer>=MILK_CHARGE){
    enemy.castTimer-=MILK_CHARGE;enemy.castPhase='release';launchMilkOrb(enemy);
   }
@@ -864,7 +1086,7 @@ function updateMilkEnemy(enemy,dt){
   enemy.castProgress=enemy.castPhase==='charge'?clamp(enemy.castTimer/MILK_CHARGE,0,1):1-clamp(enemy.castTimer/MILK_RELEASE,0,1);return;
  }
  enemyWalk(enemy,dt,(difficulty==='hard'?1.8:1.15)+wave*.16,5);
- enemy.attack-=dt;
+ enemy.attack-=attackDt;
  if(enemy.attack<=0&&Math.hypot(player.x-enemy.x,player.z-enemy.z)<30&&visible(enemy,player)){
   enemy.casting=true;enemy.castPhase='charge';enemy.castTimer=0;enemy.castProgress=0;enemy.walking=false;
   // Speed up the complete firing cycle while preserving the visible cast animation.
@@ -877,9 +1099,16 @@ function updateEnemies(dt){
   const settings=enemySettings(enemy);
   enemy.y=settings.baseY+Math.abs(Math.sin(time*(enemyKind(enemy)==='dog'?9:3)+enemy.phase))*(enemyKind(enemy)==='dog'?.018:.025);
   enemy.flash=Math.max(0,enemy.flash-dt);
-  if(enemyKind(enemy)==='dog')updateDogEnemy(enemy,dt);else updateMilkEnemy(enemy,dt);
+  enemy.supportPulse=Math.max(0,(enemy.supportPulse||0)-dt*2.5);
+ }
+ refreshEnemySupport();
+ for(const enemy of enemies){
+  if(enemy.hp<=0)continue;
+  const kind=enemyKind(enemy);
+  if(kind==='dog')updateDogEnemy(enemy,dt);else if(kind==='witch')updateWitchEnemy(enemy,dt);else updateMilkEnemy(enemy,dt);
   if(state!=='playing')return;
  }
+ updateWitchSupport(dt);refreshEnemySupport();
 }
 
 function update(dt){if(state!=='playing')return;if(!touchDevice()&&document.pointerLockElement!==canvas){pause();return;}elapsed+=dt;updateBleeding();if(state!=='playing'){updateHUD();return;}updateAKTracers(dt);if(recoilShot&&elapsed-recoilLastShot>=AK_RECOIL_RESET_DELAY)resetAKRecoil();updateWeaponState(dt);cooldown=Math.max(0,cooldown-dt);shotFlash=Math.max(0,shotFlash-dt);hitFlash=Math.max(0,hitFlash-dt);headshotTimer=Math.max(0,headshotTimer-dt);damageFlash=Math.max(0,damageFlash-dt);kick*=Math.exp(-dt*14);noticeTimer-=dt;if(noticeTimer<0)$('notice').classList.remove('visible');
@@ -1341,6 +1570,88 @@ function akMagazine(out,points,width,c){
 }
 // Keep the existing akTiltBox, akTube and akMagazine helpers.
 // Replace the old gunGeometry() with this block. drawGun(vp) submits cached meshes.
+// First-person tactical gloves and forearms. Append once to each weapon's
+// existing cached mesh so recoil, reload, switching and knife swings share the
+// exact weapon transform. No extra draw call, matrix or per-frame geometry.
+// Dependencies: milkEllipsoid(), milkLimb(), box(). All coordinates are weapon-local.
+const viewmodelHandsCache={ak:null,knife:null};
+const viewmodelHandColors={
+ fabric:[.112,.134,.152],palm:[.075,.093,.108],knuckle:[.185,.208,.228],
+ seam:[.264,.287,.304],cuff:[.149,.175,.193],sleeve:[.090,.116,.136],
+ sleeveLight:[.132,.158,.177],skin:[.62,.437,.322],skinShade:[.48,.328,.237]
+};
+function viewmodelHandJoint(out,point,radius,color){
+ milkEllipsoid(out,point[0],point[1],point[2],radius,radius,radius,color,6,3);
+}
+function viewmodelHandFinger(out,points,radius,color){
+ for(let i=0;i<points.length-1;i++)milkLimb(out,points[i],points[i+1],radius,radius*.92,color,6);
+ for(let i=1;i<points.length;i++)viewmodelHandJoint(out,points[i],radius*.96,color);
+}
+function viewmodelHandArm(out,wrist,skinEnd,sleeveEnd,radius){
+ const c=viewmodelHandColors;
+ const wristEnd=wrist.map((value,axis)=>value+(skinEnd[axis]-value)*.26);
+ milkLimb(out,wrist,wristEnd,radius*1.09,radius*1.14,c.cuff,10);
+ milkLimb(out,wristEnd,skinEnd,radius*.91,radius*1.08,c.skin,10);
+ const cuffStart=skinEnd.map((value,axis)=>value+(wristEnd[axis]-value)*.16);
+ milkLimb(out,cuffStart,skinEnd,radius*1.18,radius*1.20,c.sleeveLight,10);
+ milkLimb(out,skinEnd,sleeveEnd,radius*1.19,radius*1.60,c.sleeve,10);
+}
+function viewmodelAKHands(out){
+ const c=viewmodelHandColors;
+ // Right palm and curled lower fingers wrap the wooden pistol grip. The index
+ // follows the existing trigger guard, instead of lying over the receiver.
+ milkEllipsoid(out,.051,-.169,.100,.064,.087,.058,c.fabric,10,5);
+ milkEllipsoid(out,.052,-.167,.147,.059,.072,.021,c.palm,8,4);
+ for(let finger=0;finger<3;finger++){
+  const y=-.151-finger*.034;
+  viewmodelHandFinger(out,[[.094,y,.101],[.061,y-.003,.157],[-.001,y-.004,.158],[-.037,y+.004,.111]],.0145,c.fabric);
+  milkEllipsoid(out,.053,y,.169,.024,.010,.009,c.knuckle,6,3);
+ }
+ viewmodelHandFinger(out,[[.101,-.116,.084],[.089,-.091,.012],[.060,-.087,-.061],[.031,-.087,-.073]],.014,c.fabric);
+ viewmodelHandFinger(out,[[-.025,-.139,.139],[-.043,-.097,.104],[.012,-.077,.070]],.021,c.knuckle);
+ milkEllipsoid(out,.067,-.131,.145,.025,.026,.013,c.knuckle,6,3);
+ viewmodelHandArm(out,[.070,-.237,.147],[.215,-.359,.285],[.53,-.66,.48],.069);
+ // Left hand cups the handguard. Its four fingers curl around the exposed left
+ // wooden side; the thumb closes on the right, leaving the gas tube unobstructed.
+ milkEllipsoid(out,-.060,-.091,-.340,.068,.044,.105,c.palm,10,5);
+ milkEllipsoid(out,-.111,-.072,-.337,.022,.060,.096,c.fabric,8,4);
+ for(let finger=0;finger<4;finger++){
+  const z=-.273-finger*.043;
+  viewmodelHandFinger(out,[[-.101,-.094,z],[-.118,-.043,z],[-.091,.005,z],[-.063,.022,z]],.014,c.fabric);
+  milkEllipsoid(out,-.126,-.030,z,.009,.018,.013,c.knuckle,6,3);
+ }
+ viewmodelHandFinger(out,[[-.024,-.102,-.269],[.049,-.061,-.277],[.080,-.011,-.301],[.047,.012,-.323]],.019,c.knuckle);
+ viewmodelHandArm(out,[-.117,-.129,-.313],[-.277,-.278,-.140],[-.58,-.59,.10],.070);
+ // Small wrist tabs are fabric details, not separate animated objects.
+ box(out,-.136,-.159,-.270,.068,.022,.027,c.seam);
+ box(out,.108,-.268,.187,.050,.020,.030,c.seam);
+}
+function viewmodelKnifeHand(out){
+ const c=viewmodelHandColors;
+ // The handle axis and the old hand's grasp point remain unchanged.
+ milkEllipsoid(out,.023,-.178,-.028,.069,.085,.049,c.fabric,8,4);
+ for(let finger=0;finger<4;finger++){
+  const y=-.101-finger*.038;
+  viewmodelHandFinger(out,[[.085,y,-.010],[.078,y,.039],[.022,y-.003,.064],[-.044,y+.002,.044]],.0145,c.fabric);
+  milkEllipsoid(out,.059,y,.065,.021,.010,.010,c.knuckle,6,3);
+ }
+ viewmodelHandFinger(out,[[-.049,-.193,-.008],[-.073,-.132,.031],[-.053,-.086,.043],[-.022,-.092,.045]],.022,c.knuckle);
+ milkEllipsoid(out,.074,-.168,-.014,.020,.067,.025,c.palm,6,3);
+ viewmodelHandArm(out,[.023,-.251,-.024],[.016,-.432,-.054],[-.025,-.83,-.10],.068);
+ box(out,.022,-.289,.034,.070,.025,.010,c.seam);
+}
+function viewmodelHandsGeometry(kind){
+ if(kind!=='ak'&&kind!=='knife')throw new Error('Unknown viewmodel hand pose');
+ if(!viewmodelHandsCache[kind]){
+  const out=[];if(kind==='ak')viewmodelAKHands(out);else viewmodelKnifeHand(out);
+  viewmodelHandsCache[kind]=new Float32Array(out);
+ }
+ return viewmodelHandsCache[kind];
+}
+function appendViewmodelHands(out,kind){
+ const data=viewmodelHandsGeometry(kind);for(let i=0;i<data.length;i++)out.push(data[i]);
+}
+
 let akGeometryCache=null,akViewMesh=null,akFlashMeshes=null;
 const akViewMatrix=new Float32Array(16),akFlashMatrixA=new Float32Array(16),akFlashMatrixB=new Float32Array(16),akViewEye=V();
 function gunGeometry(){
@@ -1394,10 +1705,7 @@ function gunGeometry(){
     akTiltBox(a,x,-.264,-.170,.009,.108,.009,black,.36);
   }
   akTiltBox(a,0,-.397,-.215,.085,.027,.134,black,.31);
-  // Gloved hands stay under the receiver and wooden front handguard.
-  akTiltBox(a,.067,-.192,.133,.12,.15,.14,glove,-.20);
-  akTiltBox(a,-.042,-.104,-.338,.13,.12,.15,glove,.12);
-  b(-.065,-.072,-.349,.060,.075,.12,[.23,.25,.19]);
+  appendViewmodelHands(a,'ak');
   akGeometryCache=new Float32Array(a);
   return akGeometryCache;
 }
@@ -1535,13 +1843,7 @@ function knifeGeometry(){
   }
   box(a,0,-.309,0,.100,.032,.081,dark);
   box(a,-.020,-.325,0,.040,.012,.048,[.31,.35,.325]);
-  // One gloved hand wraps the grip. Shaped thumb/fingers leave the upper grip visible.
-  knifeTiltBox(a,.026,-.182,-.020,.131,.174,.095,glove,-.09);
-  for(let i=0;i<4;i++)knifeTiltBox(a,.014+i*.004,-.106-i*.037,.049,.107,.031,.044,i%2?glove:knuckle,-.07);
-  knifeTiltBox(a,-.060,-.101,.044,.042,.111,.053,knuckle,.53);
-  knifeTiltBox(a,.059,-.151,-.005,.038,.115,.094,[.135,.16,.13],-.10);
-  knifeTiltBox(a,.038,-.574,-.036,.127,.670,.104,[.125,.155,.12],-.12);
-  knifeTiltBox(a,.025,-.263,-.025,.141,.042,.116,[.205,.235,.175],-.12);
+  appendViewmodelHands(a,'knife');
   knifeGeometryCache=new Float32Array(a);
   return knifeGeometryCache;
 }
@@ -1569,6 +1871,162 @@ function knifeUpdateModel(presentation=0,attack=0){
 function drawKnife(vp,presentation=0,attack=0){
   if(!knifeViewMesh)knifeViewMesh=mesh(knifeGeometry());
   draw(knifeViewMesh,vp,knifeViewEye,0,knifeUpdateModel(presentation,attack),0);
+}
+
+// Block-built witch. Local +Z is the face; base Y=1.05, soles=0, hat tip=2.65.
+// Requires the existing box, mesh, draw and time globals. Five immutable GPU meshes.
+// supportPulse is a 0..1 visual intensity: 0=folded arms, 1=raised green potion.
+let witchGeometryCache=null,witchGpuModel=null;
+const witchModelMatrix=new Float32Array(16);
+const witchColors={
+ robe:[.29,.135,.37],robeDark:[.205,.089,.276],robeLight:[.365,.205,.435],
+ skin:[.57,.485,.375],skinDark:[.405,.337,.259],skinLight:[.63,.55,.425],
+ hat:[.075,.066,.080],hatLight:[.112,.095,.121],band:[.185,.105,.213],
+ brow:[.165,.134,.111],eye:[.76,.72,.60],iris:[.38,.47,.265],pupil:[.092,.075,.093],
+ green:[.30,.59,.155],greenLight:[.48,.79,.26],shoe:[.205,.18,.165]
+};
+
+function witchBeam(out,a,b,width,depth,color){
+ const dx=b[0]-a[0],dy=b[1]-a[1],dz=b[2]-a[2],length=Math.hypot(dx,dy,dz);
+ if(length<1e-8)return;
+ const ux=dx/length,uy=dy/length,uz=dz/length,flat=Math.hypot(ux,uy);
+ const rx=flat>1e-8?uy/flat:1,ry=flat>1e-8?-ux/flat:0,rz=0;
+ const fx=ry*uz-rz*uy,fy=rz*ux-rx*uz,fz=rx*uy-ry*ux;
+ const start=out.length;box(out,0,0,0,width,length,depth,color);
+ for(let i=start;i<out.length;i+=10){
+  const x=out[i],y=out[i+1],z=out[i+2],nx=out[i+3],ny=out[i+4],nz=out[i+5];
+  out[i]=(a[0]+b[0])/2+rx*x+ux*y+fx*z;out[i+1]=(a[1]+b[1])/2+ry*x+uy*y+fy*z;out[i+2]=(a[2]+b[2])/2+rz*x+uz*y+fz*z;
+  out[i+3]=rx*nx+ux*ny+fx*nz;out[i+4]=ry*nx+uy*ny+fy*nz;out[i+5]=rz*nx+uz*ny+fz*nz;
+ }
+}
+function witchBuildGeometry(){
+ if(witchGeometryCache)return witchGeometryCache;
+ const core=[],arms=[[],[]],legs=[[],[]],c=witchColors;
+ // Long squared robe, stepped hem and restrained pixel patches on its fabric.
+ box(core,0,-.14,0,.67,1.24,.44,c.robe);
+ box(core,0,-.77,.005,.76,.20,.49,c.robeDark);
+ box(core,0,.39,0,.79,.19,.47,c.robeDark);
+ box(core,0,.405,.244,.20,.19,.025,[.24,.29,.16]);
+ box(core,0,-.18,.226,.145,1.15,.016,c.robeDark);
+ for(const side of [-1,1]){
+  box(core,side*.238,-.18,.229,.125,1.11,.014,c.robeLight);
+  box(core,side*.332,-.205,-.015,.014,1.10,.15,c.robeDark);
+  box(core,side*.215,-.19,-.225,.12,1.10,.012,c.robeLight);
+  for(let patch=0;patch<3;patch++){
+   box(core,side*(patch%2?.245:.185),.17-patch*.28,.240,.054,.086,.009,c.robe);
+   box(core,side*.337,-.05-patch*.21,.090,.010,.085,.060,c.robeLight);
+  }
+  box(core,side*.27,-.764,.256,.14,.056,.013,c.robeLight);
+ }
+ // Gray-brown cuboid head and the unmistakable long square nose / single brow.
+ box(core,0,.522,0,.25,.14,.25,c.skinDark);
+ box(core,0,.815,0,.56,.55,.49,c.skin);
+ box(core,0,.65,-.254,.49,.26,.022,c.skinDark);
+ box(core,-.273,.815,-.01,.026,.42,.45,c.skinDark);
+ for(const side of [-1,1]){
+  box(core,side*.31,.826,.018,.075,.17,.13,c.skin);
+  box(core,side*.145,.885,.252,.115,.067,.020,c.eye);
+  box(core,side*.130,.882,.266,.049,.055,.010,c.iris);
+  box(core,side*.130,.882,.273,.026,.047,.007,c.pupil);
+ }
+ box(core,0,.941,.263,.445,.050,.030,c.brow);
+ box(core,0,.780,.340,.125,.30,.205,c.skinLight);
+ box(core,0,.650,.350,.128,.053,.189,c.skinDark);
+ box(core,.074,.781,.402,.045,.045,.050,[.36,.395,.215]);
+ box(core,0,.602,.253,.144,.025,.020,c.skinDark);
+ // A wide black brim, three offset square tiers and a green belt buckle.
+ box(core,0,1.119,-.025,.90,.072,.76,c.hat);
+ box(core,0,1.158,-.025,.78,.026,.66,c.hatLight);
+ box(core,0,1.283,-.035,.54,.25,.49,c.hat);
+ box(core,0,1.217,-.035,.557,.085,.506,c.band);
+ box(core,-.055,1.451,-.058,.37,.19,.35,c.hatLight);
+ box(core,-.12,1.565,-.075,.205,.070,.20,c.hat);
+ box(core,0,1.231,.227,.136,.129,.025,c.green);
+ box(core,0,1.231,.243,.065,.064,.012,c.band);
+ box(core,-.047,1.268,.245,.033,.030,.014,c.greenLight);
+ // Folded sleeves are two rigid articulated parts. The left hand carries a
+ // compact, permanently cached bottle that rises with the support animation.
+ for(const side of [-1,1]){
+  const arm=arms[side<0?0:1],shoulder=[side*.375,.395,.025],elbow=[side*.375,.105,side<0?.292:.325];
+  const hand=side<0?[.145,.114,.407]:[-.125,.217,.466];
+  witchBeam(arm,shoulder,elbow,.245,.275,c.robe);
+  witchBeam(arm,elbow,hand,.222,.226,side<0?c.robeDark:c.robeLight);
+  const cuff=hand.map((value,index)=>value+(elbow[index]-value)*.17);
+  witchBeam(arm,cuff,hand,.229,.232,c.robeDark);
+  box(arm,hand[0],hand[1],hand[2]+.012,.166,.172,.178,c.skin);
+  for(let finger=0;finger<2;finger++)box(arm,hand[0]-.045+finger*.067,hand[1]-.022,hand[2]+.106,.010,.099,.008,c.skinDark);
+  const leg=legs[side<0?0:1];
+  box(leg,side*.17,-.831,.008,.222,.218,.275,c.robeDark);
+  box(leg,side*.17,-.955,.052,.245,.190,.384,c.shoe);
+  box(leg,side*.17,-1.021,.057,.25,.057,.394,[.135,.124,.121]);
+  box(leg,side*.17,-.912,.213,.23,.083,.048,[.29,.264,.239]);
+ }
+ const potion=arms[0];
+ box(potion,.165,.272,.496,.119,.178,.105,[.13,.52,.195],.16);
+ box(potion,.165,.266,.501,.095,.118,.108,[.30,.80,.285],.32);
+ box(potion,.165,.370,.496,.056,.065,.061,[.31,.58,.25],.12);
+ box(potion,.165,.410,.496,.067,.026,.073,[.37,.295,.175]);
+ box(potion,.139,.286,.557,.019,.102,.006,[.68,.93,.63],.25);
+ box(potion,.174,.324,.557,.024,.018,.006,[.70,.97,.67],.25);
+ witchGeometryCache={core:new Float32Array(core),arms:arms.map(part=>new Float32Array(part)),legs:legs.map(part=>new Float32Array(part))};
+ return witchGeometryCache;
+}
+function witchSetMatrix(out,e,pitch=0,roll=0,px=0,py=0,pz=0,lift=0,step=0){
+ const yaw=e.yaw||0,cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch),cr=Math.cos(roll),sr=Math.sin(roll);
+ out[0]=cy*cr;out[1]=sr;out[2]=-sy*cr;out[3]=0;
+ out[4]=-cy*sr*cp+sy*sp;out[5]=cr*cp;out[6]=sy*sr*cp+cy*sp;out[7]=0;
+ out[8]=cy*sr*sp+sy*cp;out[9]=-cr*sp;out[10]=-sy*sr*sp+cy*cp;out[11]=0;
+ out[12]=e.x+cy*px+sy*pz-out[0]*px-out[4]*py-out[8]*pz+sy*step;
+ out[13]=(Number.isFinite(e.y)?e.y:1.05)+py-out[1]*px-out[5]*py-out[9]*pz+lift;
+ out[14]=e.z-sy*px+cy*pz-out[2]*px-out[6]*py-out[10]*pz+cy*step;out[15]=1;
+ return out;
+}
+function prepareWitchModel(){
+ if(witchGpuModel)return;const data=witchBuildGeometry();
+ witchGpuModel={core:mesh(data.core),arms:data.arms.map(part=>mesh(part)),legs:data.legs.map(part=>mesh(part))};
+}
+function drawWitchModel(e,vp,eye){
+ prepareWitchModel();
+ const clock=typeof time==='number'?time:0,step=e.walking?Math.sin(clock*4+(e.phase||0))*.045:0;
+ const raw=Math.max(0,Math.min(1,Number.isFinite(e.supportPulse)?e.supportPulse:0)),pulse=raw*raw*(3-2*raw),lift=Math.abs(step)*.18,flash=e.flash>0?.64:0;
+ draw(witchGpuModel.core,vp,eye,1,witchSetMatrix(witchModelMatrix,e,0,0,0,0,0,lift),flash);
+ draw(witchGpuModel.arms[0],vp,eye,1,witchSetMatrix(witchModelMatrix,e,-.82*pulse,-.06*pulse,-.375,.395,.025,lift+.025*pulse),flash);
+ draw(witchGpuModel.arms[1],vp,eye,1,witchSetMatrix(witchModelMatrix,e,-.20*pulse,.15*pulse,.375,.395,.025,lift),flash);
+ draw(witchGpuModel.legs[0],vp,eye,1,witchSetMatrix(witchModelMatrix,e,0,0,0,0,0,Math.max(0,step)*.65,step),flash);
+ draw(witchGpuModel.legs[1],vp,eye,1,witchSetMatrix(witchModelMatrix,e,0,0,0,0,0,Math.max(0,-step)*.65,-step),flash);
+}
+
+// Two shared immutable rings; no per-frame mesh uploads for support auras.
+let witchSupportGpu=null;
+const witchSupportMatrix=new Float32Array(16);
+function prepareWitchSupportEffects(){
+ if(witchSupportGpu)return;
+ const boundary=[],buff=[];
+ for(let i=0;i<96;i++){
+  const a=i*Math.PI/48,b=(i+1)*Math.PI/48;
+  for(const [out,inner,outer,color] of [[boundary,.996,1.004,[.20,.66,.38]],[buff,.94,1.06,[.67,.36,.95]]]){
+   if(out===boundary&&i%8>=5)continue;
+   for(const [angle,radius] of [[a,inner],[a,outer],[b,outer],[a,inner],[b,outer],[b,inner]])
+    out.push(Math.sin(angle)*radius,0,Math.cos(angle)*radius,0,1,0,...color,1);
+  }
+ }
+ witchSupportGpu={boundary:mesh(boundary),buff:mesh(buff)};
+}
+function witchAuraMatrix(x,y,z,radius){
+ const m=witchSupportMatrix;m.fill(0);m[0]=radius;m[5]=1;m[10]=radius;m[15]=1;m[12]=x;m[13]=y;m[14]=z;return m;
+}
+function drawWitchSupportEffects(enemy,vp,eye){
+ const kind=enemyKind(enemy),pulse=clamp(enemy.supportPulse||0,0,1);
+ if(kind!=='witch'&&!enemy.supported&&pulse<=0)return;
+ prepareWitchSupportEffects();
+ if(kind==='witch')draw(witchSupportGpu.boundary,vp,eye,1,witchAuraMatrix(enemy.x,.065,enemy.z,WITCH_SUPPORT_RADIUS),pulse*.16);
+ if(enemy.supported)draw(witchSupportGpu.buff,vp,eye,1,witchAuraMatrix(enemy.x,.075,enemy.z,enemySettings(enemy).radius+.13),pulse*.28);
+ if(pulse>0){
+  const height=kind==='dog'?.65:kind==='witch'?1.9:1.45;
+  const y=enemy.y+height+(1-pulse)*.25,size=.25*Math.min(1,pulse*3),facing=Math.atan2(eye.x-enemy.x,eye.z-enemy.z);
+  box(effectData,enemy.x,y,enemy.z,size,.065*Math.min(1,pulse*3),.022,[.40,1,.58],1,facing);
+  box(effectData,enemy.x,y,enemy.z,.065*Math.min(1,pulse*3),size,.024,[.40,1,.58],1,facing);
+ }
 }
 
 let milkOrbGpu=null;
@@ -1612,6 +2070,7 @@ function appendOrbTrail(b,out,eye){
  }
 }
 function drawEnemyEffects(enemy,vp,eye){
+ drawWitchSupportEffects(enemy,vp,eye);
  if(enemyKind(enemy)==='milk'){
   if(enemy.casting&&enemy.castPhase==='charge'){
    const origin=milkOrbOrigin(enemy);
@@ -1653,9 +2112,9 @@ function render(){resize();updateCrosshair();const w=canvas.width,h=canvas.heigh
  let proj=perspective(76*Math.PI/180,w/h),vp=multiply(proj,view(eye,yaw,pitch));draw(arena,vp,eye);effectData.length=0;if(state==='menu'){
   drawMilkModel({x:5.4,z:14,y:1.15,yaw:-.35+Math.sin(time*.3)*.18,flash:0,phase:1,walking:false},vp,eye);
   drawDogModel({x:2.9,z:16,y:.8,yaw:-.25,flash:0,phase:2,walking:false,clawPhase:'idle',clawProgress:0},vp,eye);
-  drawMilkModel({x:-7,z:5,y:1.15,yaw:.15,flash:0,phase:3,walking:false},vp,eye);
+  drawWitchModel({x:7.3,z:13,y:1.05,yaw:-.45,flash:0,phase:3,walking:false,supportPulse:0},vp,eye);
  }else{
-  for(const e of enemies){if(enemyKind(e)==='dog')drawDogModel(e,vp,eye);else drawMilkModel(e,vp,eye);drawEnemyEffects(e,vp,eye);}
+  for(const e of enemies){const kind=enemyKind(e);if(kind==='dog')drawDogModel(e,vp,eye);else if(kind==='witch')drawWitchModel(e,vp,eye);else drawMilkModel(e,vp,eye);drawEnemyEffects(e,vp,eye);}
   for(const b of bullets){drawMilkOrb(b.x,b.y,b.z,vp,eye,b.phase||0);appendOrbTrail(b,effectData,eye);}
   for(const p of particles)box(effectData,p.x,p.y,p.z,.07,.07,.07,p.c,1);
   for(const p of pickups)drawEnemyPickup(p,effectData);
@@ -1664,7 +2123,7 @@ function render(){resize();updateCrosshair();const w=canvas.width,h=canvas.heigh
  drawEffects(vp,eye);
  if(state!=='menu'){gl.clear(gl.DEPTH_BUFFER_BIT);const weaponVP=perspective(68*Math.PI/180,w/h),presentation=weaponPresentation();if(activeWeapon==='knife')drawKnife(weaponVP,presentation,knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0);else drawGun(weaponVP,presentation);if(time-lastMapDraw>=1/30){drawMap();lastMapDraw=time;}}
  setHudClass('hitmarker','active',state==='playing'&&hitFlash>0);setHudClass('hitmarker','headshot',lastHitHeadshot&&hitFlash>0);setHudClass('headshotNotice','visible',state==='playing'&&headshotTimer>0);setHudStyle('damage','opacity',String(damageFlash)); }
-function drawMap(){let ctx=mini,W=160,s=2.4;ctx.clearRect(0,0,W,W);ctx.fillStyle='rgba(12,22,24,.82)';ctx.fillRect(0,0,W,W);ctx.save();ctx.translate(80,80);ctx.fillStyle='#3c4b4d';for(let b of walls)ctx.fillRect(b.x*s-b.w*s/2,b.z*s-b.d*s/2,b.w*s,b.d*s);ctx.strokeStyle='#2e3b3e';ctx.lineWidth=.5;for(let i=-60;i<=60;i+=20){ctx.beginPath();ctx.moveTo(i,-70);ctx.lineTo(i,70);ctx.moveTo(-70,i);ctx.lineTo(70,i);ctx.stroke();}for(let e of enemies){ctx.fillStyle=enemyKind(e)==='dog'?'#ffbe60':'#ff7777';ctx.beginPath();ctx.arc(e.x*s,e.z*s,2.6,0,Math.PI*2);ctx.fill();}for(let p of pickups){ctx.fillStyle='#b9ef54';ctx.fillRect(p.x*s-2,p.z*s-2,4,4);}ctx.translate(player.x*s,player.z*s);ctx.rotate(player.yaw);ctx.fillStyle='#d5fa52';ctx.beginPath();ctx.moveTo(0,-5);ctx.lineTo(3.6,4);ctx.lineTo(0,2);ctx.lineTo(-3.6,4);ctx.closePath();ctx.fill();ctx.restore();}
+function drawMap(){let ctx=mini,W=160,s=2.4;ctx.clearRect(0,0,W,W);ctx.fillStyle='rgba(12,22,24,.82)';ctx.fillRect(0,0,W,W);ctx.save();ctx.translate(80,80);ctx.fillStyle='#3c4b4d';for(let b of walls)ctx.fillRect(b.x*s-b.w*s/2,b.z*s-b.d*s/2,b.w*s,b.d*s);ctx.strokeStyle='#2e3b3e';ctx.lineWidth=.5;for(let i=-60;i<=60;i+=20){ctx.beginPath();ctx.moveTo(i,-70);ctx.lineTo(i,70);ctx.moveTo(-70,i);ctx.lineTo(70,i);ctx.stroke();}for(let e of enemies){ctx.fillStyle=enemyKind(e)==='witch'?'#bd89ff':enemyKind(e)==='dog'?'#ffbe60':'#ff7777';ctx.beginPath();ctx.arc(e.x*s,e.z*s,2.6,0,Math.PI*2);ctx.fill();}for(let p of pickups){ctx.fillStyle='#b9ef54';ctx.fillRect(p.x*s-2,p.z*s-2,4,4);}ctx.translate(player.x*s,player.z*s);ctx.rotate(player.yaw);ctx.fillStyle='#d5fa52';ctx.beginPath();ctx.moveTo(0,-5);ctx.lineTo(3.6,4);ctx.lineTo(0,2);ctx.lineTo(-3.6,4);ctx.closePath();ctx.fill();ctx.restore();}
 function resize(){const {width,height}=getGameSize(),d=Math.min(window.devicePixelRatio||1,MAX_RENDER_DPR,Math.sqrt(MAX_RENDER_PIXELS/(width*height))),w=Math.max(1,Math.floor(width*d)),h=Math.max(1,Math.floor(height*d));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}}
 function jump(){if(state==='playing'&&player.ground){player.vy=5.3;player.ground=false;tone(170,.10,'sine',.015,-70);}}
 document.addEventListener('wheel',event=>{
@@ -1717,7 +2176,7 @@ window.screen?.orientation?.addEventListener?.('change',syncMobileOrientation);
 matchMedia('(pointer:coarse)').addEventListener?.('change',syncMobileOrientation);
 syncMobileOrientation();
 // Read-only diagnostics for validating the playable state.
-window.gameStatus=()=>({state,map:currentMap.id,mapName:currentMap.name,wave,health:player?.hp,bleeding:bleedRemaining()>0,bleedRemaining:bleedRemaining(),ammo,reserve,enemies:enemies.length,enemyTypes:{milk:enemies.filter(e=>enemyKind(e)==='milk').length,dog:enemies.filter(e=>enemyKind(e)==='dog').length},score,kills,shots,hits,headshots,headshotKills,elapsed,weapon:activeWeapon,previousWeapon,switchingWeapon:!!weaponSwitch,weaponSwitchProgress:weaponSwitch?weaponSwitch.elapsed/WEAPON_SWITCH_DURATION:0,knifeAttackProgress:knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0,knifeSwings,knifeHits,recoilShot,lastRecoilDegrees:{yaw:lastRecoilYaw*180/Math.PI,pitch:lastRecoilPitch*180/Math.PI},recoilOffsetDegrees:{yaw:recoilYaw*180/Math.PI,pitch:recoilPitch*180/Math.PI},horizontalSpeed:player?.horizontalSpeed||0,accuracyThreshold:ACCURACY_SPEED_THRESHOLD,spreadDegrees:getShotSpread()*180/Math.PI,accurate:!!player&&getShotSpread()===0,crouching:player?.crouching||false,height:player?.eyeHeight,position:player?{x:player.x,y:player.y,z:player.z}:null,webgl:!!gl});
+window.gameStatus=()=>({state,map:currentMap.id,mapName:currentMap.name,wave,health:player?.hp,bleeding:bleedRemaining()>0,bleedRemaining:bleedRemaining(),ammo,reserve,enemies:enemies.length,enemyTypes:{milk:enemies.filter(e=>enemyKind(e)==='milk').length,dog:enemies.filter(e=>enemyKind(e)==='dog').length,witch:enemies.filter(e=>enemyKind(e)==='witch').length},score,kills,shots,hits,headshots,headshotKills,elapsed,weapon:activeWeapon,previousWeapon,switchingWeapon:!!weaponSwitch,weaponSwitchProgress:weaponSwitch?weaponSwitch.elapsed/WEAPON_SWITCH_DURATION:0,knifeAttackProgress:knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0,knifeSwings,knifeHits,recoilShot,lastRecoilDegrees:{yaw:lastRecoilYaw*180/Math.PI,pitch:lastRecoilPitch*180/Math.PI},recoilOffsetDegrees:{yaw:recoilYaw*180/Math.PI,pitch:recoilPitch*180/Math.PI},horizontalSpeed:player?.horizontalSpeed||0,accuracyThreshold:ACCURACY_SPEED_THRESHOLD,spreadDegrees:getShotSpread()*180/Math.PI,accurate:!!player&&getShotSpread()===0,crouching:player?.crouching||false,height:player?.eyeHeight,position:player?{x:player.x,y:player.y,z:player.z}:null,webgl:!!gl});
 gl.enable(gl.DEPTH_TEST);gl.clearColor(.35,.45,.48,1);
 let fpsStart=null,fpsFrames=0,fpsMode=null;
 function updateFPS(now){
