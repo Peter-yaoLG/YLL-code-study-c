@@ -658,16 +658,16 @@ function showNotice(txt,duration=2.4){$('notice').textContent=txt;noticeTimer=du
 function getBaseEnemyHealth(type){return type==='boss'?2000*Math.pow(1.2,bossState.count):type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
 function createEnemy(type,x,z,id){
  if(!ENEMY_TYPES[type])type='milk';
- const dog=type==='dog',initialDelay=rnd(1.8,3),baseMaxHp=getBaseEnemyHealth(type),enemyScale=getEnemyScaling(),maxHp=baseMaxHp*enemyScale,damageScale=getEnemyDamageScaling();
+ const dog=type==='dog',initialDelay=rnd(1.8,3),baseMaxHp=getBaseEnemyHealth(type),enemyScale=type==='boss'?1:getEnemyScaling(),maxHp=baseMaxHp*enemyScale,damageScale=getEnemyDamageScaling();
  return {x,z,type,y:ENEMY_TYPES[type].baseY,hp:maxHp,maxHp,baseMaxHp,enemyScale,damageScale,phase:rnd(0,6),attack:dog?initialDelay/2:type==='witch'?0:type==='boss'?1.4:(initialDelay+MILK_CHARGE)/MILK_ATTACK_RATE-MILK_CHARGE,flash:0,yaw:0,id,clawPhase:'idle',clawTimer:0,clawProgress:0,attackSide:1,strikeDone:false,casting:false,castPhase:'idle',castTimer:0,castProgress:0,castShots:0,supported:false,supportPulse:0,revivalAttempted:false,potionCooldown:0,potionPhase:'idle',potionTimer:0,potionProgress:0,potionKind:'damage',potionTarget:null,followTarget:null,followTargetId:null,bossPhase:'idle',bossProgress:0,bossTimer:0,bossAttackKind:'fireball',bossAttackYaw:0,bossTarget:null};
 }
 function rescaleEnemies(){
  const scale=getEnemyScaling(),damageScale=getEnemyDamageScaling();
  for(const enemy of enemies){
   if(!(enemy.hp>0))continue;
-  const previous=enemy.enemyScale||1,ratio=scale/previous;
+  const healthScale=enemyKind(enemy)==='boss'?1:scale,previous=enemy.enemyScale||1,ratio=healthScale/previous;
   enemy.baseMaxHp??=(enemy.maxHp??getBaseEnemyHealth(enemyKind(enemy)))/previous;
-  enemy.hp*=ratio;enemy.maxHp=enemy.baseMaxHp*scale;enemy.enemyScale=scale;enemy.damageScale=damageScale;
+  enemy.hp*=ratio;enemy.maxHp=enemy.baseMaxHp*healthScale;enemy.enemyScale=healthScale;enemy.damageScale=damageScale;
  }
 }
 function randomEnemyType(){const roll=Math.random()*110;return roll<40?'milk':roll<80?'dog':'witch';}
