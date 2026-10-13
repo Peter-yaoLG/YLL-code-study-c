@@ -271,4 +271,40 @@ body.touch-layout #freezeBtn svg{width:25px;height:25px;opacity:.8;pointer-event
 body.touch-layout #freezeBtnText{font-size:9px;line-height:1.2;white-space:nowrap;pointer-events:none}
 body.touch-layout #freezeBtn.cooling,body.touch-layout #freezeBtn:disabled{color:#83a2b2;border-color:rgba(164,199,215,.25);background:rgba(17,31,39,.4)}
 body.touch-layout #freezeBtn.active{color:#e6fbff;border-color:rgba(208,247,255,.85);background:rgba(59,111,138,.48)}
+
+/* The shield overlays the existing vitals/joystick area without taking touches. */
+#shieldOverlay{position:fixed;inset:0;z-index:7;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 55%,rgba(255,140,45,.18) 80%,rgba(255,179,69,.65) 100%);box-shadow:inset 0 0 38px rgba(255,155,48,.45)}
+body:not(.playing) #shieldOverlay{display:none}
+#shieldPanel{position:absolute;left:32px;bottom:128px;width:214px;padding:6px 8px;background:rgba(41,29,16,.65);border:1px solid rgba(246,178,86,.3);border-radius:3px;pointer-events:none}
+.shield-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:9px;color:#f0c47f;letter-spacing:.4px}
+.shield-heading strong{font-size:13px;font-weight:400;color:#ffe2ad}.shield-heading .mono{font-size:10px}
+.shield-track{height:3px;margin-top:5px;background:rgba(255,195,112,.15);overflow:hidden}
+#shieldFill{height:100%;max-width:100%;background:linear-gradient(90deg,#fa913a,#ffe1a1);transition:width .1s linear}
+#chestMenu{z-index:51;--upgrade-accent:#ffc877;background:rgba(14,12,11,.86);touch-action:pan-y;overscroll-behavior:contain}
+.chest-panel{width:min(700px,100%);max-height:calc(100dvh - 60px);overflow:auto;padding:26px 28px 18px;border:1px solid rgba(255,202,132,.22);border-top:2px solid #ffc877;background:linear-gradient(135deg,#302922,#181e1e);scrollbar-width:thin;touch-action:pan-y}
+.chest-panel .eyebrow{color:#ffcf8f}.chest-panel .short-rule{background:#ffcf8f}
+#chestTitle{font-size:31px;margin:12px 0 9px;letter-spacing:3px;font-weight:600}
+#chestSubtitle{font-size:12px;line-height:1.7;color:#c5b79f;margin:0 0 18px}
+.chest-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.chest-choice{min-height:216px;touch-action:pan-y}
+.chest-symbol{display:block;font-size:32px;line-height:36px;color:#ffc877;margin-bottom:9px}
+.chest-shield-icon{width:32px;height:36px;color:#ffc877;margin-bottom:9px}
+.chest-instructions{font-size:10px;line-height:1.6;color:#aa9e8b;margin:15px 0 0;text-align:center}
+#chestMenu:not(.hidden)~#mobileControls{visibility:hidden;pointer-events:none}
+body.touch-layout #shieldPanel{left:calc(34px + var(--safe-left));bottom:calc(78px + var(--safe-bottom));width:163.2px;padding:4px 6px}
+#bossHealthPanel{position:absolute;left:50%;top:88px;transform:translateX(-50%);width:244px;padding:6px 9px;background:rgba(37,20,13,.66);border:1px solid rgba(244,127,58,.32);border-radius:3px;pointer-events:none}
+.boss-health-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;color:#f7c696}.boss-health-heading>strong{font-weight:500;letter-spacing:1px}.boss-health-heading>.mono{font-size:10px;color:#e9b589}.boss-health-track{height:4px;margin-top:5px;background:rgba(255,170,85,.18)}#bossHealthFill{height:100%;background:linear-gradient(90deg,#df5429,#f8ac4a);transition:width .1s}
+body.touch-layout #bossHealthPanel{left:calc(50% + 32px);top:calc(68px + var(--safe-top));width:164px;padding:4px 6px}.touch-layout .boss-health-heading,.touch-layout .boss-health-heading>.mono{font-size:8px}.touch-layout .boss-health-track{height:3px;margin-top:4px}
+body.touch-layout.mobile-narrow #bossHealthPanel{left:calc(159px + var(--safe-left));top:calc(146px + var(--safe-top));transform:none;width:158px}
+body.touch-layout .shield-heading{font-size:8px}body.touch-layout .shield-heading strong{font-size:10px}body.touch-layout .shield-heading .mono{font-size:8px}
+body.touch-layout .shield-track{height:2px;margin-top:4px}
+body.touch-layout .chest-panel{width:min(680px,100%);max-height:calc(var(--game-height,100dvh) - var(--safe-top) - var(--safe-bottom) - 24px);padding:13px 17px 10px}
+body.touch-layout .chest-panel .eyebrow{font-size:8px}
+body.touch-layout #chestTitle{font-size:23px;margin:7px 0 6px}
+body.touch-layout #chestSubtitle{font-size:10px;margin-bottom:10px;line-height:1.5}
+body.touch-layout .chest-choices{gap:10px}
+body.touch-layout .chest-choice{min-height:146px;padding:10px 12px}
+body.touch-layout .chest-symbol{font-size:23px;line-height:25px;margin-bottom:5px}
+body.touch-layout .chest-shield-icon{width:23px;height:25px;margin-bottom:5px}
+body.touch-layout .chest-instructions{font-size:8px;margin-top:9px}
 @media(prefers-reduced-motion:reduce){#xpFill,.upgrade-choice{transition:none}}

@@ -19,7 +19,8 @@ const BLEED_DURATION=3,BLEED_INTERVAL=1,BLEED_DAMAGE=3;
 const ENEMY_HIT_ZONES=[[0,0,0,.79,'body'],[0,.83,0,.32,'head'],[-.28,-.91,.12,.27,'body'],[.28,-.91,.12,.27,'body']];
 const DOG_HIT_ZONES=[[0,-.13,-.13,.53,'body'],[0,.12,.47,.38,'head'],[0,-.01,.81,.22,'head'],[-.325,-.64,.53,.23,'body'],[.325,-.64,.53,.23,'body'],[-.368,-.65,-.32,.21,'body'],[.368,-.65,-.32,.21,'body']];
 const WITCH_HIT_ZONES=[[0,-.14,0,.51,'body'],[0,-.65,.015,.39,'body'],[0,.815,.015,.36,'head'],[0,.77,.36,.17,'head'],[-.34,.20,.28,.25,'body'],[.34,.20,.28,.25,'body'],[-.17,-.955,.08,.20,'body'],[.17,-.955,.08,.20,'body']];
-const ENEMY_TYPES={milk:{baseY:1.15,radius:.8,speed:1},dog:{baseY:.80,radius:.58,speed:3.3},witch:{baseY:1.05,radius:.58,speed:1}};
+const BOSS_HIT_ZONES=ENEMY_HIT_ZONES.map(([x,y,z,r,zone])=>[x*1.6,y*1.6,z*1.6,r*1.6,zone]);
+const ENEMY_TYPES={milk:{baseY:1.15,radius:.8,speed:1},dog:{baseY:.80,radius:.58,speed:3.3},witch:{baseY:1.05,radius:.58,speed:1},boss:{baseY:1.84,radius:1.28,speed:.8}};
 const HEADSHOT_COLOR=[1,.70,.30];
 const V=(x=0,y=0,z=0)=>({x,y,z}), length=v=>Math.hypot(v.x,v.y,v.z);
 const IDENTITY_MODEL=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
@@ -343,8 +344,10 @@ function drawEffects(vp,eye){if(!effectData.length)return;gl.bindBuffer(gl.ARRAY
 const mini=$('minimap').getContext('2d');
 let state='menu',player, enemies=[],bullets=[],particles=[],pickups=[],wave=1,score=0,kills=0,shots=0,hits=0,elapsed=0,ammo=30,reserve=180,reload=0,cooldown=0,transition=0,time=0,last=performance.now(),shotFlash=0,hitFlash=0,damageFlash=0,bob=0,kick=0,noticeTimer=0,moveAmount=0;
 const witchPotions=[],witchSplashes=[],enemyCorpses=[],revivalEffects=[];
-const ENDLESS_ENEMY_CAP=30,ENDLESS_PICKUP_CAP=48,ENDLESS_INITIAL_ENEMIES=4;
+const ENDLESS_ENEMY_CAP=20,ENDLESS_PICKUP_CAP=48,ENDLESS_INITIAL_ENEMIES=4;
 let spawned=0,nextEnemyId=0,spawnTimer=0;
+const bossState={spawned:false,defeated:false,enemyId:null};
+let bossSpawnRetry=0;
 const freezeSkill={cooldownRemaining:0,freezeRemaining:0,slowRemaining:0,casts:0,frozenAt:0};
 const freezeFrame={activeDt:0,slowDt:0,normalDt:0};
 let enemyStepMoveScale=null;
@@ -369,22 +372,27 @@ function advanceFreezeSkill(dt){
  freezeFrame.activeDt=activeDt;freezeFrame.slowDt=slowDt;freezeFrame.normalDt=activeDt-slowDt;
  return freezeFrame;
 }
-const runProgress={level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false};
+const runProgress={level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0};
 let xpAwardDeferral=0;
 const flameLinks=[];
-const MAJOR_UPGRADES=['leech','majorDamage','majorHealth','freeze','majorBullet','fireBullets'];
-const ENEMY_XP={milk:10,witch:25,dog:20};
-function nextLevelXP(level=runProgress.level){return 100+Math.floor((level-1)/5)*10;}
+const MAJOR_UPGRADES=['leech','majorDamage','majorHealth','freeze','majorBullet'];
+const bossChests=[];
+let chestRewardPending=false;
+const shieldState={value:0,regenStart:0,regenElapsed:0,lastHitAt:-Infinity};
+const ENEMY_XP={milk:10,witch:25,dog:20,boss:100};
+function nextLevelXP(level=runProgress.level){return 100+Math.floor((level-1)/5)*30;}
 function getMaxHealth(){return 100+runProgress.maxHealthBonus;}
+function getMaxShield(){return runProgress.fireShield?50+runProgress.shieldBonus:0;}
 function getPlayerDamageMultiplier(){return 1+runProgress.damageBonus;}
 function getBulletDamage(headshot=false){return (1+runProgress.bulletBaseBonus)*getPlayerDamageMultiplier()*(headshot?HEADSHOT_DAMAGE_MULTIPLIER:1);}
 function getReloadDuration(){return 1.65/(1+runProgress.reloadRanks*.1);}
-function getEnemyCap(){return ENDLESS_ENEMY_CAP+Math.floor(runProgress.level/10)*5;}
+function getEnemyCap(){return ENDLESS_ENEMY_CAP+Math.floor(runProgress.level/10)*2;}
 function getEnemyScaling(){return 1+Math.floor(kills/20)*.1;}
 function healthAfterDamage(health,amount){const remaining=health-amount;return remaining<=1e-9?0:remaining;}
 function healFromBullet(dealtDamage){if(player&&player.hp>0&&runProgress.leechLevel>0&&dealtDamage>0)player.hp=Math.min(getMaxHealth(),player.hp+dealtDamage*.3*runProgress.leechLevel);}
 function resetRunProgress(){
- Object.assign(runProgress,{level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false});
+ Object.assign(runProgress,{level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0});
+ bossChests.length=0;chestRewardPending=false;Object.assign(shieldState,{value:0,regenStart:0,regenElapsed:0,lastHitAt:-Infinity});$('chestMenu').classList.add('hidden');
  xpAwardDeferral=0;flameLinks.length=0;
  $('upgradeMenu').classList.add('hidden');$('upgradeMenu').classList.remove('major-upgrade');
 }
@@ -406,8 +414,8 @@ function upgradeDescription(id){
   case 'majorDamage':return {title:'火力突破',text:`枪械与近战伤害加成 +30%：${percent}% → ${percent+30}%，无上限。`};
   case 'majorHealth':return {title:'生命突破',text:`生命上限 +50：${getMaxHealth()} → ${getMaxHealth()+50}，同时恢复 50 点生命，无上限。`};
   case 'freeze':return {title:'极寒延伸',text:`冰冻 ${3+runProgress.freezeRanks} → ${4+runProgress.freezeRanks} 秒，后续减速 ${2+runProgress.freezeRanks*2} → ${4+runProgress.freezeRanks*2} 秒。减速 50%，冷却 25 秒，可重复强化。`};
-  case 'majorBullet':return {title:'重型弹头',text:`子弹基础伤害 +5：${1+runProgress.bulletBaseBonus} → ${6+runProgress.bulletBaseBonus}。受伤害加成影响，爆头仍为 4 倍，无上限。`};
-  case 'fireBullets':return {title:runProgress.fireBullets?'火焰子弹 · 已获得':'火焰子弹',text:'AK 命中后向 5 米内最多 2 个其他敌人扩散，各造成该发伤害的 30%。享受伤害加成，单次命中不重复传导。'};
+  case 'majorBullet':return {title:'重型弹头',text:`子弹基础伤害 +3：${1+runProgress.bulletBaseBonus} → ${4+runProgress.bulletBaseBonus}。受伤害加成影响，爆头仍为 4 倍，无上限。`};
+  case 'shieldUpgrade':return {title:'护盾强化',text:`火焰保护罩上限 +30：${getMaxShield()} → ${getMaxShield()+30}，同时恢复 30 点护盾。停止受伤后用 5 秒回满，可重复强化。`};
  }
 }
 function openLevelUpgrade(){
@@ -415,14 +423,14 @@ function openLevelUpgrade(){
  const level=runProgress.pendingLevels[0],major=level%10===0;
  state='upgrading';clearTouchInput();cancelMilkBursts();cancelLock();
  document.body.classList.remove('mouse-captured');document.exitPointerLock?.();$('pauseMenu').classList.add('hidden');
- let pool=major?MAJOR_UPGRADES.slice():['bullet','reload','health','damage'].filter(id=>id!=='reload'||runProgress.reloadRanks<20);
+ let pool=major?[...MAJOR_UPGRADES,...(runProgress.fireShield?['shieldUpgrade']:[])]:['bullet','reload','health','damage'].filter(id=>id!=='reload'||runProgress.reloadRanks<20);
  if(!major)for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
  runProgress.choices=major?pool:pool.slice(0,3);
  $('upgradeMenu').classList.toggle('major-upgrade',major);
  $('upgradeTitle').textContent=major?`Lv ${level} · 大升级`:`Lv ${level} · 等级提升`;
  $('upgradeSubtitle').textContent=major?'从全部大技能中任选一项。战斗与存活计时已暂停。':'三选一强化，仅在本局生效。战斗与存活计时已暂停。';
  $('upgradeChoices').setAttribute('aria-label',major?'全部大技能任选一项':'三选一强化');
- for(let i=0;i<6;i++){const id=runProgress.choices[i],card=$('upgradeChoice'+i);card.classList.toggle('hidden',!id);if(!id)continue;const option=upgradeDescription(id);$('upgradeChoiceTitle'+i).textContent=option.title;$('upgradeChoiceDescription'+i).textContent=option.text;card.disabled=id==='fireBullets'&&runProgress.fireBullets;}
+ for(let i=0;i<6;i++){const id=runProgress.choices[i],card=$('upgradeChoice'+i);card.classList.toggle('hidden',!id);if(!id)continue;const option=upgradeDescription(id);$('upgradeChoiceTitle'+i).textContent=option.title;$('upgradeChoiceDescription'+i).textContent=option.text;card.disabled=false;}
  $('upgradeMenu').classList.remove('hidden');$('upgradeChoice0').focus();updateHUD();
 }
 function awardEnemyExperience(kind){
@@ -435,7 +443,7 @@ function chooseLevelUpgrade(index){
  if(state!=='upgrading'||!Number.isInteger(index)||index<0||index>=runProgress.choices.length)return;
  const id=runProgress.choices[index],oldReloadDuration=getReloadDuration();
  if(id==='reload'&&runProgress.reloadRanks>=20)return;
- if(id==='fireBullets'&&runProgress.fireBullets)return;
+ if(id==='shieldUpgrade'&&!runProgress.fireShield)return;
  for(let i=0;i<6;i++)$('upgradeChoice'+i).disabled=true;
  if(id==='bullet')runProgress.bulletBaseBonus+=.5;
  else if(id==='reload')runProgress.reloadRanks++;
@@ -443,14 +451,42 @@ function chooseLevelUpgrade(index){
  else if(id==='damage'||id==='majorDamage')runProgress.damageBonus=Math.round((runProgress.damageBonus+(id==='damage'?.1:.3))*100)/100;
  else if(id==='leech')runProgress.leechLevel++;
  else if(id==='freeze')runProgress.freezeRanks++;
- else if(id==='majorBullet')runProgress.bulletBaseBonus+=5;
- else if(id==='fireBullets')runProgress.fireBullets=true;
+ else if(id==='majorBullet')runProgress.bulletBaseBonus+=3;
+ else if(id==='shieldUpgrade'){runProgress.shieldBonus+=30;shieldState.value=Math.min(getMaxShield(),shieldState.value+30);shieldState.regenStart=shieldState.value;shieldState.regenElapsed=0;}
  if(reload>0)reload*=getReloadDuration()/oldReloadDuration;
  runProgress.pendingLevels.shift();runProgress.choices=[];clearTouchInput();
  if(runProgress.pendingLevels.length){openLevelUpgrade();return;}
  $('upgradeMenu').classList.add('hidden');state='paused';$('pauseMenu').classList.remove('hidden');updateHUD();
  // The card click/key is the user gesture needed to capture the desktop mouse again.
  resume();
+}
+function dropBossChest(target){
+ if(bossChests.some(chest=>chest.sourceId===target.id)||chestRewardPending)return;
+ bossChests.push({x:target.x,y:.45,z:target.z,phase:0,sourceId:target.id});
+ showNotice('大火龙已被击败 · 拾取宝箱选择奖励',4);
+}
+function openBossChest(chest){
+ const index=bossChests.indexOf(chest);if(state!=='playing'||index<0||!player||player.hp<=0)return false;
+ bossChests.splice(index,1);chestRewardPending=true;state='chest';clearTouchInput();cancelMilkBursts();cancelLock();
+ document.body.classList.remove('mouse-captured');document.exitPointerLock?.();$('pauseMenu').classList.add('hidden');
+ $('chestChoiceFire').disabled=runProgress.fireBullets;$('chestChoiceShield').disabled=runProgress.fireShield;
+ $('chestMenu').classList.remove('hidden');$('chestChoiceFire').focus();updateHUD();return true;
+}
+function chooseChestReward(id){
+ if(state!=='chest'||!chestRewardPending||!['fireBullets','fireShield'].includes(id)||runProgress[id])return false;
+ runProgress[id]=true;
+ if(id==='fireShield')Object.assign(shieldState,{value:getMaxShield(),regenStart:getMaxShield(),regenElapsed:5,lastHitAt:-Infinity});
+ chestRewardPending=false;$('chestChoiceFire').disabled=true;$('chestChoiceShield').disabled=true;$('chestMenu').classList.add('hidden');
+ clearTouchInput();state='paused';$('pauseMenu').classList.remove('hidden');updateHUD();resume();return true;
+}
+function updateBossChests(dt){
+ if(state!=='playing')return;
+ for(const chest of bossChests){chest.phase+=dt;if(Math.hypot(player.x-chest.x,player.z-chest.z)<2){openBossChest(chest);return;}}
+}
+function updateShield(dt){
+ if(state!=='playing'||!runProgress.fireShield||shieldState.lastHitAt>=elapsed-1e-9)return;
+ shieldState.regenElapsed=Math.min(5,shieldState.regenElapsed+dt);
+ shieldState.value=Math.min(getMaxShield(),shieldState.regenStart+(getMaxShield()-shieldState.regenStart)*shieldState.regenElapsed/5);
 }
 const WEAPON_SWITCH_DURATION=.60,WEAPON_STOW_DURATION=.16,KNIFE_ATTACK_DURATION=.48,KNIFE_HIT_DELAY=.12,KNIFE_REACH=2.2;
 const AK_RECOIL_RESET_DELAY=.30,AK_FIRE_INTERVAL=.10,AK_RECOIL_SCALE=.85;
@@ -610,11 +646,11 @@ function playHeadshotSound(){playCombatBuffer('head',.47,0);}
 function playHeadshotKillSound(){playCombatBuffer('headKill',.44,0);}
 
 function showNotice(txt,duration=2.4){$('notice').textContent=txt;noticeTimer=duration;$('notice').classList.add('visible');}
-function getBaseEnemyHealth(type){return type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
+function getBaseEnemyHealth(type){return type==='boss'?80:type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
 function createEnemy(type,x,z,id){
  if(!ENEMY_TYPES[type])type='milk';
  const dog=type==='dog',initialDelay=rnd(1.8,3),baseMaxHp=getBaseEnemyHealth(type),enemyScale=getEnemyScaling(),maxHp=baseMaxHp*enemyScale;
- return {x,z,type,y:ENEMY_TYPES[type].baseY,hp:maxHp,maxHp,baseMaxHp,enemyScale,phase:rnd(0,6),attack:dog?initialDelay/2:type==='witch'?0:(initialDelay+MILK_CHARGE)/MILK_ATTACK_RATE-MILK_CHARGE,flash:0,yaw:0,id,clawPhase:'idle',clawTimer:0,clawProgress:0,attackSide:1,strikeDone:false,casting:false,castPhase:'idle',castTimer:0,castProgress:0,castShots:0,supported:false,supportPulse:0,revivalAttempted:false,potionCooldown:0,potionPhase:'idle',potionTimer:0,potionProgress:0,potionKind:'damage',potionTarget:null,followTarget:null,followTargetId:null};
+ return {x,z,type,y:ENEMY_TYPES[type].baseY,hp:maxHp,maxHp,baseMaxHp,enemyScale,phase:rnd(0,6),attack:dog?initialDelay/2:type==='witch'?0:type==='boss'?1.4:(initialDelay+MILK_CHARGE)/MILK_ATTACK_RATE-MILK_CHARGE,flash:0,yaw:0,id,clawPhase:'idle',clawTimer:0,clawProgress:0,attackSide:1,strikeDone:false,casting:false,castPhase:'idle',castTimer:0,castProgress:0,castShots:0,supported:false,supportPulse:0,revivalAttempted:false,potionCooldown:0,potionPhase:'idle',potionTimer:0,potionProgress:0,potionKind:'damage',potionTarget:null,followTarget:null,followTargetId:null,bossPhase:'idle',bossProgress:0,bossTimer:0,bossAttackKind:'fireball',bossAttackYaw:0,bossTarget:null};
 }
 function rescaleEnemies(){
  const scale=getEnemyScaling();
@@ -627,20 +663,47 @@ function rescaleEnemies(){
 }
 function randomEnemyType(){const roll=Math.random()*110;return roll<40?'milk':roll<70?'dog':'witch';}
 function getSpawnInterval(survivalTime=elapsed){return Math.max(.5,2.8*Math.pow(.86,Math.max(0,survivalTime)/30));}
-function spawnEnemy(){
- if(state!=='playing'||!player||enemies.length>=getEnemyCap())return null;
- const type=randomEnemyType(),radius=ENEMY_TYPES[type].radius,spots=currentMap.enemies,start=Math.floor(Math.random()*spots.length);
- for(let i=0;i<spots.length;i++){
-  const [x,z]=spots[(start+i)%spots.length];
-  if(Math.hypot(x-player.x,z-player.z)<8||x-radius<-22.5||x+radius>22.5||z-radius<-28.5||z+radius>27.5||!canStand(x,z,radius,0))continue;
-  if(enemies.some(other=>other.hp>0&&Math.hypot(x-other.x,z-other.z)<radius+enemySettings(other).radius+.3))continue;
-  const enemy=createEnemy(type,x,z,nextEnemyId++);enemies.push(enemy);spawned++;return enemy;
+function spawnPointHidden(type,x,z){
+ const settings=ENEMY_TYPES[type],zones=type==='boss'?BOSS_HIT_ZONES:type==='dog'?DOG_HIT_ZONES:type==='witch'?WITCH_HIT_ZONES:ENEMY_HIT_ZONES;
+ const height=settings.baseY+Math.max(...zones.map(zone=>zone[1]+zone[3])),extent=settings.radius+.4;
+ const dx=x-player.x,dy=height*.5-player.y,dz=z-player.z,sy=Math.sin(player.yaw),cy=Math.cos(player.yaw),sp=Math.sin(player.pitch),cp=Math.cos(player.pitch);
+ const depth=dx*sy*cp+dy*sp-dz*cy*cp,right=dx*cy+dz*sy,up=-dx*sy*sp+dy*cp+dz*cy*sp;
+ const size=getGameSize(),tanY=Math.tan(38*Math.PI/180),tanX=tanY*size.width/Math.max(1,size.height),bound=Math.hypot(extent,height*.5);
+ // A conservative full-body sphere keeps partially visible edge spawns out of the hidden tier.
+ if(depth+bound<=0||Math.abs(right)>depth*tanX+bound*Math.hypot(1,tanX)||Math.abs(up)>depth*tanY+bound*Math.hypot(1,tanY))return true;
+ // A chest ray alone would mistake low cover for hiding a visible head or flank.
+ for(const point of [V(x,.15,z),V(x,height,z),V(x-extent,height*.5,z),V(x+extent,height*.5,z),V(x,height*.5,z-extent),V(x,height*.5,z+extent)]){
+  const delta=sub(point,player),distance=length(delta);
+  if(wallDistance(player,norm(delta))>distance-.05)return false;
  }
- return null;
+ return true;
+}
+function spawnEnemy(requestedType=null){
+ if(state!=='playing'||!player||enemies.length>=getEnemyCap())return null;
+ const type=requestedType&&ENEMY_TYPES[requestedType]?requestedType:randomEnemyType(),radius=ENEMY_TYPES[type].radius,spots=currentMap.enemies,start=Math.floor(Math.random()*spots.length);
+ let selected=null,fallback=null;
+ for(let i=0;i<spots.length;i++){
+  const [x,z]=spots[(start+i)%spots.length],distance=Math.hypot(x-player.x,z-player.z);
+  if(distance<12||x-radius<-22.5||x+radius>22.5||z-radius<-28.5||z+radius>27.5||!canStand(x,z,radius,0))continue;
+  if(enemies.some(other=>other.hp>0&&Math.hypot(x-other.x,z-other.z)<radius+enemySettings(other).radius+.3))continue;
+  if(spawnPointHidden(type,x,z)){selected=[x,z];break;}
+  if(distance>=18&&!fallback)fallback=[x,z];
+ }
+ selected=selected||fallback;if(!selected)return null;
+ const enemy=createEnemy(type,selected[0],selected[1],nextEnemyId++);enemies.push(enemy);spawned++;return enemy;
+}
+function resetBossState(){bossState.spawned=false;bossState.defeated=false;bossState.enemyId=null;bossSpawnRetry=0;}
+function trySpawnBoss(){
+ if(state!=='playing'||!player||runProgress.level<20||bossState.spawned)return null;
+ const enemy=spawnEnemy('boss');if(!enemy)return null;
+ bossState.spawned=true;bossState.enemyId=enemy.id;
+ showNotice('小 Boss 来袭 · 火龙奶娃',3.5);tone(145,.35,'sawtooth',.035,-65);return enemy;
 }
 function updateEndlessSpawns(dt){
  if(state!=='playing'||dt<=0)return;
  const interval=getSpawnInterval();
+ // The one-off boss takes the next safe slot; unsafe or crowded frames only postpone it.
+ if(runProgress.level>=20&&!bossState.spawned){bossSpawnRetry=Math.max(0,bossSpawnRetry-dt);if(bossSpawnRetry<=1e-9){spawnTimer=trySpawnBoss()?interval:.35;bossSpawnRetry=.35;}return;}
  // A full arena or delayed frame never banks a burst of overdue spawns.
  if(enemies.length>=getEnemyCap()){spawnTimer=interval;return;}
  spawnTimer-=dt;if(spawnTimer>1e-9)return;
@@ -648,7 +711,7 @@ function updateEndlessSpawns(dt){
 }
 function spawnWave(){
  // Keep the original entry point for deployment; there are no subsequent waves.
- clearWitchPotions();clearEnemyRevival();resetFreezeSkill();resetEnemyNavigation();enemies=[];wave=1;spawned=0;nextEnemyId=0;
+ clearWitchPotions();clearEnemyRevival();resetFreezeSkill();resetBossState();resetEnemyNavigation();enemies=[];wave=1;spawned=0;nextEnemyId=0;
  for(let i=0;i<ENDLESS_INITIAL_ENEMIES;i++)spawnEnemy();
  spawnTimer=enemies.length<ENDLESS_INITIAL_ENEMIES?.35:getSpawnInterval();
  showNotice('无尽尸潮 · 坚持更久，敌人会更快抵达',3);tone(420,.15,'sine');
@@ -871,7 +934,7 @@ function traceEnemy(direction,range=100,allowInside=false){
  const wall=wallDistance(player,direction);let nearest=Math.min(range,wall),target=null,zone=null;
  for(const enemy of enemies){
   const cs=Math.cos(enemy.yaw),sn=Math.sin(enemy.yaw);
-  for(const [dx,height,dz,radius,hitZone] of (enemyKind(enemy)==='dog'?DOG_HIT_ZONES:enemyKind(enemy)==='witch'?WITCH_HIT_ZONES:ENEMY_HIT_ZONES)){
+  for(const [dx,height,dz,radius,hitZone] of (enemyKind(enemy)==='boss'?BOSS_HIT_ZONES:enemyKind(enemy)==='dog'?DOG_HIT_ZONES:enemyKind(enemy)==='witch'?WITCH_HIT_ZONES:ENEMY_HIT_ZONES)){
    const center=V(enemy.x+dx*cs+dz*sn,enemy.y+height,enemy.z+dz*cs-dx*sn),offset=sub(player,center),projection=dot(offset,direction),disc=projection*projection-dot(offset,offset)+radius*radius;
    if(disc<0)continue;
    const root=Math.sqrt(disc),entry=-projection-root,exit=-projection+root;
@@ -883,10 +946,11 @@ function traceEnemy(direction,range=100,allowInside=false){
 }
 function defeatEnemy(target,headshot=false){
  const index=enemies.indexOf(target);if(index<0)return;
- const kind=enemyKind(target),dog=kind==='dog';score+=dog?200+wave*40:kind==='witch'?150+wave*30:100+wave*25;kills++;
+ const kind=enemyKind(target),dog=kind==='dog',boss=kind==='boss';score+=boss?1000:dog?200+wave*40:kind==='witch'?150+wave*30:100+wave*25;kills++;
  if(headshot){score+=HEADSHOT_KILL_BONUS;headshotKills++;}
  burst(target.x,target.y,target.z,headshot?HEADSHOT_COLOR:palettes.lime,18);
- if(dog||kills%3===0){if(pickups.length>=ENDLESS_PICKUP_CAP)pickups.shift();pickups.push({x:target.x,y:.45,z:target.z,phase:0,health:dog?40:25,ammo:dog?45:30,kind:dog?'dog':'milk'});}
+ if(boss){bossState.defeated=true;dropBossChest(target);}
+ else if(dog||kills%3===0){if(pickups.length>=ENDLESS_PICKUP_CAP)pickups.shift();pickups.push({x:target.x,y:.45,z:target.z,phase:0,health:dog?40:25,ammo:dog?45:30,kind:dog?'dog':'milk',dropAge:0,dropLifetime:5});}
  recordEnemyDeath(target);enemies.splice(index,1);
  if(kind==='witch'){enemyNavigation.grids.delete('witch-follow-'+target.id);refreshEnemySupport();}
  if(headshot)playHeadshotKillSound();else tone(210,.22,'sawtooth',.035,-140);
@@ -959,7 +1023,13 @@ function shoot(){
  if(ammo===0&&reserve===0){reserve=60;showNotice('紧急弹药已补给 · 按 R 换弹');}
  updateHUD();
 }
-function damage(n){player.hp=healthAfterDamage(player.hp,n);damageFlash=.55;tone(65,.2,'triangle',.075,-20);if(player.hp<=0)end(false);}
+function damage(n){
+ if(state!=='playing'||!player||n<=0)return;
+ const blocked=Math.min(shieldState.value,n);shieldState.value-=blocked;
+ if(runProgress.fireShield){shieldState.regenStart=shieldState.value;shieldState.regenElapsed=0;shieldState.lastHitAt=elapsed;}
+ player.hp=healthAfterDamage(player.hp,n-blocked);damageFlash=blocked>=n?.12:.55;
+ tone(blocked>0?190:65,.2,'triangle',blocked>0?.04:.075,-20);if(player.hp<=0)end(false);
+}
 function bleedRemaining(){return player?Math.max(0,player.bleedUntil-elapsed):0;}
 function clearBleeding(){
  if(player){player.bleedUntil=0;player.bleedNextTick=0;player.bleedDamage=BLEED_DAMAGE;}
@@ -1017,6 +1087,10 @@ function castFreezeSkill(){
 }
 function updateHUD(){
  updateFreezeHUD();
+ const boss=enemies.find(enemy=>enemyKind(enemy)==='boss'&&enemy.hp>0);setHudClass('bossHealthPanel','hidden',!boss);
+ if(boss){setHudText('bossHealthValue',Math.ceil(boss.hp));setHudText('bossHealthMax',Math.ceil(boss.maxHp));setHudStyle('bossHealthFill','width',clamp(boss.hp/boss.maxHp*100,0,100)+'%');}
+ setHudClass('shieldPanel','hidden',!runProgress.fireShield);setHudText('shieldValue',Math.ceil(shieldState.value));setHudText('shieldMax',getMaxShield());setHudStyle('shieldFill','width',getMaxShield()>0?clamp(shieldState.value/getMaxShield()*100,0,100)+'%':'0%');
+ setHudStyle('shieldOverlay','opacity',state==='playing'&&runProgress.fireShield?String(Math.max(0,1-(elapsed-shieldState.lastHitAt)/.25)*.35):'0');
  updateProgressHUD();
  setHudText('maxHealth',getMaxHealth());
  const bleedSeconds=Math.ceil(Math.max(0,bleedRemaining()-1e-9));
@@ -1029,11 +1103,13 @@ function updateHUD(){
 const DOG_WINDUP=.16,DOG_STRIKE=.08,DOG_RECOVER=.24,DOG_HIT_TIME=.0175,DOG_ATTACK_RANGE=2.22,DOG_HIT_RANGE=2.34;
 const MILK_CHARGE=.24,MILK_RELEASE=.20,MILK_ORB_SPEED=35,MILK_ATTACK_RATE=1.5;
 const MILK_BURST_INTERVAL=.12,MILK_BURST_COUNT=3,MILK_BURST_SPAN=MILK_BURST_INTERVAL*(MILK_BURST_COUNT-1);
+const BOSS_FIREBALL_WINDUP=.9,BOSS_FIREBALL_RECOVER=.45,BOSS_FIREBALL_CYCLE=4.5,BOSS_FIREBALL_SPEED=22;
+const BOSS_BREATH_WINDUP=1.1,BOSS_BREATH_RECOVER=.55,BOSS_BREATH_CYCLE=5,BOSS_BREATH_RANGE=7,BOSS_BREATH_HALF_ANGLE=35*Math.PI/180;
 const WITCH_POTION_RANGE=16,WITCH_POTION_RADIUS=3,WITCH_POTION_DAMAGE=30;
 const WITCH_POTION_WINDUP=.4,WITCH_POTION_RECOVER=.3,WITCH_POTION_CYCLE=3.6,WITCH_POTION_GRAVITY=14,WITCH_POTION_SIZE=.12;
 const WITCH_SUPPORT_RADIUS=7,WITCH_ATTACK_RATE=1.2;
 const WITCH_REVIVAL_WINDOW=5,WITCH_REVIVAL_CHANCE=.3,WITCH_REVIVAL_HEALTH=.5;
-function enemyKind(enemy){return enemy.type==='dog'?'dog':enemy.type==='witch'?'witch':'milk';}
+function enemyKind(enemy){return enemy.type==='boss'?'boss':enemy.type==='dog'?'dog':enemy.type==='witch'?'witch':'milk';}
 function enemySettings(enemy){return ENEMY_TYPES[enemyKind(enemy)];}
 function witchCanSupport(source,target){
  if(source===target||source.hp<=0||target.hp<=0||enemyKind(source)!=='witch')return false;
@@ -1049,12 +1125,12 @@ function refreshEnemySupport(){
 }
 function clearEnemyRevival(){enemyCorpses.length=0;revivalEffects.length=0;}
 function recordEnemyDeath(target){
- if(state!=='playing'||target.hp>0||target.revivalAttempted||enemyCorpses.some(corpse=>corpse.id===target.id))return;
+ if(state!=='playing'||target.hp>0||enemyKind(target)==='boss'||target.revivalAttempted||enemyCorpses.some(corpse=>corpse.id===target.id))return;
  enemyCorpses.push({id:target.id,type:enemyKind(target),x:target.x,y:target.y,z:target.z,yaw:target.yaw||0,diedAt:elapsed,attempted:false,source:target});
 }
 function witchCanRevive(source,corpse){
  if(isEnemyFrozen())return false;
- if(source.hp<=0||enemyKind(source)!=='witch'||source.id===corpse.id)return false;
+ if(source.hp<=0||enemyKind(source)!=='witch'||source.id===corpse.id||corpse.type==='boss')return false;
  if(Math.hypot(corpse.x-source.x,corpse.z-source.z)>WITCH_SUPPORT_RADIUS)return false;
  const from=V(source.x,source.y+.25,source.z),to=V(corpse.x,corpse.y+.15,corpse.z),delta=sub(to,from),distance=length(delta);
  return distance<1e-8||wallDistance(from,norm(delta))>distance-1e-6;
@@ -1394,6 +1470,59 @@ function updateMilkEnemy(enemy,dt){
  }
 }
 function cancelMilkBursts(){for(const enemy of enemies)if(enemyKind(enemy)==='milk'&&enemy.casting){enemy.casting=false;enemy.castPhase='idle';enemy.castTimer=0;enemy.castProgress=0;enemy.castShots=0;}}
+function bossFireballOrigin(enemy){
+ const center=V(enemy.x,enemy.y+.064,enemy.z),forward=V(Math.sin(enemy.bossAttackYaw),0,Math.cos(enemy.bossAttackYaw));
+ const clearance=wallDistance(center,forward),offset=Math.max(0,Math.min(1.088,clearance-.25));
+ if(clearance<=.05)return null;
+ return V(center.x+forward.x*offset,center.y,center.z+forward.z*offset);
+}
+function launchBossFireballs(enemy){
+ if(state!=='playing'||isEnemyFrozen()||enemy.hp<=0||!enemies.includes(enemy)||!enemy.bossTarget)return;
+ const origin=bossFireballOrigin(enemy);if(!origin||!visible(origin,enemy.bossTarget))return;
+ const direction=norm(sub(enemy.bossTarget,origin)),damageScale=enemy.enemyScale||1,baseDamage=difficulty==='easy'?10:difficulty==='hard'?14:12;
+ for(const angle of [-11,0,11]){
+  const a=angle*Math.PI/180,c=Math.cos(a),s=Math.sin(a),dx=direction.x*c+direction.z*s,dz=direction.z*c-direction.x*s;
+  bullets.push({x:origin.x,y:origin.y,z:origin.z,vx:dx*BOSS_FIREBALL_SPEED,vy:direction.y*BOSS_FIREBALL_SPEED,vz:dz*BOSS_FIREBALL_SPEED,life:3,age:0,phase:enemy.phase||0,kind:'bossFire',visualRadius:.23,baseDamage,damageScale});
+ }
+ tone(135,.23,'sawtooth',.03,-80);
+}
+function strikeBossBreath(enemy){
+ if(state!=='playing'||isEnemyFrozen()||enemy.hp<=0||!enemies.includes(enemy))return;
+ const from=V(enemy.x,enemy.y+.064,enemy.z),target=V(player.x,player.y-.3,player.z),delta=sub(target,from),distance=length(delta),horizontal=Math.hypot(delta.x,delta.z);
+ const forward=V(Math.sin(enemy.bossAttackYaw),0,Math.cos(enemy.bossAttackYaw));
+ if(distance<=BOSS_BREATH_RANGE&&(horizontal<1e-8||(delta.x*forward.x+delta.z*forward.z)/horizontal>=Math.cos(BOSS_BREATH_HALF_ANGLE))&&(distance<1e-8||wallDistance(from,norm(delta))>distance-1e-6))damage(20*(enemy.enemyScale||1));
+ tone(95,.28,'sawtooth',.035,-45);
+}
+function updateBossEnemy(enemy,dt){
+ if(state!=='playing'||isEnemyFrozen()||dt<=0||enemy.hp<=0)return;
+ const phase=enemy.bossPhase||'idle';
+ if(phase==='idle'){
+  enemy.yaw=Math.atan2(player.x-enemy.x,player.z-enemy.z);
+  enemyWalk(enemy,dt,((difficulty==='hard'?1.8:1.15)+wave*.16)*ENEMY_TYPES.boss.speed,8);
+  enemy.attack=Math.max(0,enemy.attack-dt);
+  const distance=Math.hypot(player.x-enemy.x,player.z-enemy.z);
+  if(enemy.attack>1e-9||distance>30||!visible(enemy,player))return;
+  enemy.bossAttackKind=distance<=BOSS_BREATH_RANGE?'breath':'fireball';enemy.bossPhase=enemy.bossAttackKind;
+  enemy.bossAttackYaw=enemy.yaw;enemy.bossTarget=V(player.x,player.y-.3,player.z);
+  enemy.bossTimer=0;enemy.bossProgress=0;enemy.walking=false;enemy.casting=true;enemy.castPhase='charge';enemy.castProgress=0;
+  tone(enemy.bossAttackKind==='breath'?220:310,.18,'triangle',.025,-100);return;
+ }
+ enemy.walking=false;enemy.yaw=enemy.bossAttackYaw;enemy.bossTimer+=dt;
+ const breath=enemy.bossAttackKind==='breath',windup=breath?BOSS_BREATH_WINDUP:BOSS_FIREBALL_WINDUP,recover=breath?BOSS_BREATH_RECOVER:BOSS_FIREBALL_RECOVER;
+ if(enemy.bossPhase!=='recover'&&enemy.bossTimer>=windup-1e-9){
+  enemy.bossTimer=Math.max(0,enemy.bossTimer-windup);
+  if(breath)strikeBossBreath(enemy);else launchBossFireballs(enemy);
+  if(state!=='playing')return;
+  enemy.bossPhase='recover';enemy.castPhase='release';
+ }
+ if(enemy.bossPhase==='recover'&&enemy.bossTimer>=recover-1e-9){
+  const remainder=Math.max(0,enemy.bossTimer-recover);
+  enemy.bossPhase='idle';enemy.bossTimer=0;enemy.bossProgress=0;enemy.casting=false;enemy.castPhase='idle';enemy.castProgress=0;
+  enemy.attack=Math.max(0,(breath?BOSS_BREATH_CYCLE:BOSS_FIREBALL_CYCLE)-windup-recover-remainder);return;
+ }
+ enemy.bossProgress=clamp(enemy.bossTimer/(enemy.bossPhase==='recover'?recover:windup),0,1);
+ enemy.castProgress=enemy.bossPhase==='recover'?1-enemy.bossProgress:enemy.bossProgress;
+}
 function updateEnemies(dt){
  if(isEnemyFrozen()||dt<=0)return;
  for(const enemy of enemies){
@@ -1406,7 +1535,7 @@ function updateEnemies(dt){
  for(const enemy of enemies){
   if(enemy.hp<=0)continue;
   const kind=enemyKind(enemy);
-  if(kind==='dog')updateDogEnemy(enemy,dt);else if(kind==='witch')updateWitchEnemy(enemy,dt);else updateMilkEnemy(enemy,dt);
+  if(kind==='boss')updateBossEnemy(enemy,dt);else if(kind==='dog')updateDogEnemy(enemy,dt);else if(kind==='witch')updateWitchEnemy(enemy,dt);else updateMilkEnemy(enemy,dt);
   if(state!=='playing')return;
  }
  refreshEnemySupport();
@@ -1424,7 +1553,7 @@ function updateEnemyCombat(dt,moveScale){
   const delta=sub(b,old),step=length(delta),direction=norm(delta),wallHit=wallDistance(old,direction),hitWall=wallHit<=step;
   const playerCenter=V(player.x,player.y-.3,player.z),oc=sub(old,playerCenter),projection=dot(oc,direction),disc=projection*projection-dot(oc,oc)+.55*.55;
   const contact=disc>=0?Math.max(0,-projection-Math.sqrt(disc)):Infinity,intersects=disc>=0&&(-projection+Math.sqrt(disc))>=0;
-  if(intersects&&contact<=step&&contact<wallHit){damage((difficulty==='easy'?6:difficulty==='hard'?14:9)*(b.damageScale??1));bullets.splice(i,1);if(state!=='playing')return;}
+  if(intersects&&contact<=step&&contact<wallHit){damage((b.baseDamage??(difficulty==='easy'?6:difficulty==='hard'?14:9))*(b.damageScale??1));bullets.splice(i,1);if(state!=='playing')return;}
   else if(b.life<=0||hitWall){if(hitWall)burst(old.x+direction.x*wallHit,old.y+direction.y*wallHit,old.z+direction.z*wallHit,[1,.75,.28],5);bullets.splice(i,1);}
  }
 }
@@ -1438,13 +1567,14 @@ function update(dt){if(state!=='playing')return;if(!touchDevice()&&document.poin
  movePlayer(dt,forward,strafe);
  // Keep jump and floor collision independent of the changing camera height.
  player.vy-=dt*13;player.feetY+=player.vy*dt;if(player.feetY<=0){player.feetY=0;player.vy=0;player.ground=true;}player.y=player.feetY+player.eyeHeight;if(fire)shoot();if(state!=='playing'){updateHUD();return;}updateAKViewRecoil(dt);
+ updateBossChests(dt);if(state!=='playing'){updateHUD();return;}
  const enemyFrame=advanceFreezeSkill(dt);
  updateEnemyCombat(enemyFrame.slowDt,.5);if(state!=='playing'){updateHUD();return;}
  updateEnemyCombat(enemyFrame.normalDt,1);
  if(state!=='playing'){updateHUD();return;}
  for(let i=particles.length-1;i>=0;i--){let p=particles[i];p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.vy-=dt*7;if(p.life<=0)particles.splice(i,1);}
- for(let i=pickups.length-1;i>=0;i--){let p=pickups[i];p.phase+=dt;if(Math.hypot(player.x-p.x,player.z-p.z)<1.7){const heal=p.health||25,rounds=p.ammo||30;player.hp=Math.min(getMaxHealth(),player.hp+heal);reserve+=rounds;pickups.splice(i,1);showNotice(`补给已拾取 · 生命 +${heal} / 弹药 +${rounds}`,2);tone(700,.2,'sine',.04,350);}}
- updateWitchRevival(enemyFrame.activeDt);updateEndlessSpawns(dt);updateHUD();
+ for(let i=pickups.length-1;i>=0;i--){let p=pickups[i];if(p.dropLifetime>0){p.dropAge=(p.dropAge||0)+dt;if(p.dropAge>=p.dropLifetime-1e-9){pickups.splice(i,1);continue;}}p.phase+=dt;if(Math.hypot(player.x-p.x,player.z-p.z)<1.7){const heal=p.health||25,rounds=p.ammo||30;player.hp=Math.min(getMaxHealth(),player.hp+heal);reserve+=rounds;pickups.splice(i,1);showNotice(`补给已拾取 · 生命 +${heal} / 弹药 +${rounds}`,2);tone(700,.2,'sine',.04,350);}}
+ updateWitchRevival(enemyFrame.activeDt);updateEndlessSpawns(dt);updateShield(dt);updateHUD();
 }
 /* Warm, pear-shaped milk character matched to the supplied four views.
  * Local +Z is the face. Enemy base Y=1.15, feet=0, head=2.23.
@@ -1701,6 +1831,96 @@ function drawMilkModel(e,vp,eye){
  draw(milkGpuModel.legs[1],vp,eye,1,milkSetBaseMatrix(milkModelMatrix,e,Math.max(0,-stride),-stride),flash);
  draw(milkGpuModel.arms[0],vp,eye,1,milkSetArmMatrix(milkArmMatrix,e,-1,lift),flash);
  draw(milkGpuModel.arms[1],vp,eye,1,milkSetArmMatrix(milkArmMatrix,e,1,lift),flash);
+}
+
+// Dragon milk Boss: original milk meshes and poses scaled uniformly by 1.6.
+// Decorative armor/wings never change the gameplay hit zones.
+let bossVisualGeometry=null,bossVisualGpu=null;
+const bossVisualMatrix=new Float32Array(16),bossWingMatrix=new Float32Array(16);
+function bossTriangle(out,a,b,c,color){
+ const n=milkUnit(milkCross([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]));
+ milkTriangle(out,milkVertex(a,n),milkVertex(b,n),milkVertex(c,n),color);
+}
+function bossBuildGeometry(){
+ if(bossVisualGeometry)return bossVisualGeometry;
+ const armor=[],wings=[[],[]],chest=[],fire=[],embers=[],warning=[];
+ const red=[.65,.14,.055],orange=[.94,.36,.07],gold=[1,.65,.16],ivory=[.94,.82,.51],wood=[.23,.085,.035],metal=[.78,.43,.085];
+ // Shingled side/back plates preserve the face and pale belly.
+ for(let row=0;row<5;row++)for(let column=0;column<9;column++){
+  const y=-.36+row*.205,angle=.93+column*(Math.PI*2-1.86)/8+(row%2)*.04;
+  const a=milkSurface(milkProfileAt(y+.09),angle,.027),b=milkSurface(milkProfileAt(y),angle-.15,.030),c=milkSurface(milkProfileAt(y-.11),angle,.029),d=milkSurface(milkProfileAt(y),angle+.15,.030);
+  bossTriangle(armor,a,b,c,column%2?orange:red);bossTriangle(armor,a,c,d,column%2?red:orange);
+ }
+ for(const side of [-1,1]){
+  milkEllipsoid(armor,side*.45,.30,-.015,.19,.16,.22,orange,10,4);
+  const a=[side*.16,1.01,-.07],b=[side*.23,1.22,-.13],c=[side*.31,1.39,-.23];
+  milkLimb(armor,a,b,.085,.055,ivory,8);milkLimb(armor,b,c,.056,.002,ivory,8);
+  const out=wings[side<0?0:1],root=[0,0,0],top=[side*.48,.53,-.12],tip=[side*.94,.08,-.13],notch=[side*.60,.04,.035],lower=[side*.32,-.31,.045];
+  for(const [a,b,c]of [[root,top,tip],[root,tip,notch],[root,notch,lower]]){bossTriangle(out,a.map((v,i)=>v+(i===2?.006:0)),b.map((v,i)=>v+(i===2?.006:0)),c.map((v,i)=>v+(i===2?.006:0)),red);bossTriangle(out,c.map((v,i)=>v-(i===2?.006:0)),b.map((v,i)=>v-(i===2?.006:0)),a.map((v,i)=>v-(i===2?.006:0)),orange);}
+  for(const end of [top,tip,lower])milkLimb(out,root,end,.043,.016,gold,7);
+  milkLimb(out,top,tip,.026,.018,orange,7);
+ }
+ // Dark wooden chest with a stepped lid, gold hoops, latch and ember emblem.
+ box(chest,0,-.05,0,1.03,.66,.72,wood);box(chest,0,.32,0,1.07,.18,.75,[.36,.14,.045]);
+ box(chest,0,.445,0,.96,.10,.68,[.43,.19,.055]);box(chest,0,.52,0,.77,.05,.59,wood);
+ for(const x of [-.39,.39]){box(chest,x,.08,0,.10,.97,.77,metal);box(chest,x,.535,0,.11,.05,.62,gold);}
+ box(chest,0,-.35,0,1.09,.09,.78,metal);box(chest,0,.205,0,1.1,.06,.79,gold);
+ box(chest,0,.13,.415,.19,.26,.08,metal);box(chest,0,.15,.46,.075,.11,.018,[1,.53,.06],1.3);
+ bossTriangle(chest,[-.10,-.15,.369],[0,.045,.382],[.11,-.15,.369],orange);
+ milkEllipsoid(fire,0,0,0,.23,.23,.23,[1,.63,.13],12,6);
+ for(let i=9;i<fire.length;i+=10)fire[i]=1.8;
+ for(let i=0;i<8;i++){const a=i*Math.PI/4;box(embers,Math.cos(a)*.26,Math.sin(a)*.26,0,.055,.055,.055,[1,.23,.02],1.8);}
+ // Thin, open 70-degree ground sector: readable without filling the floor.
+ const half=35*Math.PI/180;
+ for(let i=0;i<28;i++){
+  const a=-half+i*half*2/28,b=-half+(i+1)*half*2/28,inner=6.92,outer=7;
+  const p=[Math.sin(a)*inner,.045,Math.cos(a)*inner],q=[Math.sin(b)*inner,.045,Math.cos(b)*inner],r=[Math.sin(b)*outer,.045,Math.cos(b)*outer],s=[Math.sin(a)*outer,.045,Math.cos(a)*outer];
+  bossTriangle(warning,p,q,r,orange);bossTriangle(warning,p,r,s,orange);
+ }
+ for(const a of [-half,half])for(let i=0;i<7;i++){const d=.8+i*.88;box(warning,Math.sin(a)*d,.045,Math.cos(a)*d,.055,.025,.48,orange,1,a);}
+ for(let i=9;i<warning.length;i+=10)warning[i]=1.2;
+ bossVisualGeometry={armor:new Float32Array(armor),wings:wings.map(x=>new Float32Array(x)),chest:new Float32Array(chest),fire:new Float32Array(fire),embers:new Float32Array(embers),warning:new Float32Array(warning)};
+ return bossVisualGeometry;
+}
+function prepareBossVisuals(){if(bossVisualGpu)return;const g=bossBuildGeometry();bossVisualGpu={armor:mesh(g.armor),wings:g.wings.map(mesh),chest:mesh(g.chest),fire:mesh(g.fire),embers:mesh(g.embers),warning:mesh(g.warning)};}
+function bossScaleMilkMatrix(m,e){
+ for(const i of [0,1,2,4,5,6,8,9,10])m[i]*=1.6;
+ m[12]=e.x+(m[12]-e.x)*1.6;m[13]=e.y+(m[13]-e.y)*1.6;m[14]=e.z+(m[14]-e.z)*1.6;return m;
+}
+function bossSetWingMatrix(e,side,lift){
+ const clock=getEnemyVisualTime(),spread=e.casting?.16:0,roll=side*(.075*Math.sin(clock*2.4+(e.phase||0))+spread),cr=Math.cos(roll),sr=Math.sin(roll),yaw=e.yaw||0,cy=Math.cos(yaw),sy=Math.sin(yaw),m=bossWingMatrix;
+ m[0]=1.6*cy*cr;m[1]=1.6*sr;m[2]=-1.6*sy*cr;m[3]=0;
+ m[4]=-1.6*cy*sr;m[5]=1.6*cr;m[6]=1.6*sy*sr;m[7]=0;
+ m[8]=1.6*sy;m[9]=0;m[10]=1.6*cy;m[11]=0;
+ m[12]=e.x+1.6*(cy*side*.40-sy*.28);m[13]=e.y+1.6*(.42+lift);m[14]=e.z+1.6*(-sy*side*.40-cy*.28);m[15]=1;return m;
+}
+function drawBossModel(e,vp,eye){
+ prepareMilkModel();prepareBossVisuals();const stride=milkStride(e),lift=Math.abs(stride)*.15,flash=e.flash>0?.64:0;
+ draw(milkGpuModel.core,vp,eye,1,bossScaleMilkMatrix(milkSetBaseMatrix(bossVisualMatrix,e,lift),e),flash);
+ draw(milkGpuModel.legs[0],vp,eye,1,bossScaleMilkMatrix(milkSetBaseMatrix(bossVisualMatrix,e,Math.max(0,stride),stride),e),flash);
+ draw(milkGpuModel.legs[1],vp,eye,1,bossScaleMilkMatrix(milkSetBaseMatrix(bossVisualMatrix,e,Math.max(0,-stride),-stride),e),flash);
+ for(const side of [-1,1])draw(milkGpuModel.arms[side<0?0:1],vp,eye,1,bossScaleMilkMatrix(milkSetArmMatrix(bossVisualMatrix,e,side,lift),e),flash);
+ draw(bossVisualGpu.armor,vp,eye,1,bossScaleMilkMatrix(milkSetBaseMatrix(bossVisualMatrix,e,lift),e),flash);
+ for(const side of [-1,1])draw(bossVisualGpu.wings[side<0?0:1],vp,eye,1,bossSetWingMatrix(e,side,lift),flash);
+}
+function drawBossChest(p,vp,eye){prepareBossVisuals();draw(bossVisualGpu.chest,vp,eye,1,witchPotionSetMatrix(p.x,p.y||.45,p.z,.13,0,0,1,1,1));}
+function drawBossFire(x,y,z,vp,eye,phase=0,scale=1){
+ prepareBossVisuals();draw(bossVisualGpu.fire,vp,eye,1,witchPotionSetMatrix(x,y,z,0,0,0,scale,scale,scale));
+ draw(bossVisualGpu.embers,vp,eye,1,witchPotionSetMatrix(x,y,z,getEnemyVisualTime()*4+phase,.7,phase,scale,scale,scale));
+}
+function drawBossEffects(e,vp,eye){
+ if(e.bossPhase==='fireball'){
+  const p=clamp(e.bossProgress||0,0,1),origin=bossFireballOrigin(e);drawBossFire(origin.x,origin.y,origin.z,vp,eye,e.phase||0,.35+1.15*p);
+ }else if(e.bossAttackKind==='breath'&&(e.bossPhase==='breath'||e.bossPhase==='recover')){
+  prepareBossVisuals();const yaw=e.bossAttackYaw||0;
+  draw(bossVisualGpu.warning,vp,eye,1,witchPotionSetMatrix(e.x,0,e.z,yaw));
+  const p=clamp(e.bossProgress||0,0,1),mouthY=e.y+1.13;
+  if(e.bossPhase==='breath')drawBossFire(e.x+Math.sin(yaw)*.64,mouthY,e.z+Math.cos(yaw)*.64,vp,eye,0,.2+.45*p);
+  else{
+   const fade=Math.max(0,1-p),reach=.9+5.8*Math.min(1,p*3);
+   for(let i=0;i<5;i++){const a=yaw+(i-2)*.16,d=reach*(.55+(i%2)*.20);drawBossFire(e.x+Math.sin(a)*d,mouthY*(1-d/10),e.z+Math.cos(a)*d,vp,eye,i,fade*(.7+d*.08));}
+  }
+ }
 }
 
 // A round Shiba with a pixel sword and shield. Local +Z is forward; base Y is .80.
@@ -2611,6 +2831,7 @@ function appendOrbTrail(b,out,eye){
 }
 function drawEnemyEffects(enemy,vp,eye){
  drawWitchSupportEffects(enemy,vp,eye);
+ if(enemyKind(enemy)==='boss'){drawBossEffects(enemy,vp,eye);return;}
  if(enemyKind(enemy)==='milk'){
   if(enemy.casting&&enemy.castPhase==='charge'){
    const origin=milkOrbOrigin(enemy);
@@ -2650,7 +2871,7 @@ function drawEnemyFreeze(enemy,vp,eye){
  const frozen=isEnemyFrozen();if(!frozen&&freezeSkill.slowRemaining<=1e-9)return;
  prepareFreezeVisuals();const radius=enemySettings(enemy).radius+.24,kind=enemyKind(enemy);
  draw(freezeVisualGpu.ring,vp,eye,1,witchPotionSetMatrix(enemy.x,0,enemy.z,0,0,0,radius,1,radius));
- if(frozen)draw(freezeVisualGpu.cage,vp,eye,1,witchPotionSetMatrix(enemy.x,0,enemy.z,.1,0,0,radius,kind==='dog'?1.55:kind==='witch'?3:2.43,radius));
+ if(frozen)draw(freezeVisualGpu.cage,vp,eye,1,witchPotionSetMatrix(enemy.x,0,enemy.z,.1,0,0,radius,kind==='dog'?1.55:kind==='witch'?3:kind==='boss'?4.1:2.43,radius));
 }
 function updateFlameLinks(){for(let i=flameLinks.length-1;i>=0;i--)if(elapsed-flameLinks[i].bornAt>=flameLinks[i].life)flameLinks.splice(i,1);}
 function drawFlameLinks(out,eye){
@@ -2669,12 +2890,13 @@ function drawFlameLinks(out,eye){
  }
 }
 function drawEnemyPickup(p,out){
- const boosted=p.kind==='dog',c=boosted?[1,.74,.27]:palettes.lime,y=.40+Math.sin(time*3)*.1,size=boosted?.62:.5;
+ const scale=p.dropLifetime>0?clamp(1-(p.dropAge||0)/p.dropLifetime,0,1):1;if(scale<=0)return;
+ const boosted=p.kind==='dog',c=boosted?[1,.74,.27]:palettes.lime,y=(.40+Math.sin(time*3)*.1)*scale,size=(boosted?.62:.5)*scale;
  box(out,p.x,y,p.z,size,size,size,palettes.dark,0,time);
  // Four glowing medical crosses stay readable while circling the pickup.
  for(const angle of [0,Math.PI/2,Math.PI,Math.PI*1.5]){
-  const x=p.x+Math.sin(angle)*(size/2+.015),z=p.z+Math.cos(angle)*(size/2+.015);
-  box(out,x,y,z,.34,.09,.025,c,1,angle);box(out,x,y,z,.09,.34,.025,c,1,angle);
+  const x=p.x+Math.sin(angle)*(size/2+.015*scale),z=p.z+Math.cos(angle)*(size/2+.015*scale);
+  box(out,x,y,z,.34*scale,.09*scale,.025*scale,c,1,angle);box(out,x,y,z,.09*scale,.34*scale,.025*scale,c,1,angle);
  }
 }
 
@@ -2693,8 +2915,9 @@ function render(){resize();updateCrosshair();updateFreezeHUD();const w=canvas.wi
   drawDogModel({x:2.9,z:16,y:.8,yaw:-.25,flash:0,phase:2,walking:false,clawPhase:'idle',clawProgress:0},vp,eye);
   drawWitchModel({x:7.3,z:13,y:1.05,yaw:-.45,flash:0,phase:3,walking:false,supportPulse:0},vp,eye);
  }else{
-  for(const e of enemies){const kind=enemyKind(e);if(kind==='dog')drawDogModel(e,vp,eye);else if(kind==='witch')drawWitchModel(e,vp,eye);else drawMilkModel(e,vp,eye);drawEnemyEffects(e,vp,eye);drawEnemyFreeze(e,vp,eye);}
-  for(const b of bullets){drawMilkOrb(b.x,b.y,b.z,vp,eye,b.phase||0);appendOrbTrail(b,effectData,eye);}
+  for(const e of enemies){const kind=enemyKind(e);if(kind==='dog')drawDogModel(e,vp,eye);else if(kind==='witch')drawWitchModel(e,vp,eye);else if(kind==='boss')drawBossModel(e,vp,eye);else drawMilkModel(e,vp,eye);drawEnemyEffects(e,vp,eye);drawEnemyFreeze(e,vp,eye);}
+  for(const b of bullets){if(b.kind==='bossFire')drawBossFire(b.x,b.y,b.z,vp,eye,b.phase||0);else drawMilkOrb(b.x,b.y,b.z,vp,eye,b.phase||0);appendOrbTrail(b,effectData,eye);}
+  for(const chest of bossChests)drawBossChest(chest,vp,eye);
   for(const p of witchPotions)if(p.kind!=='heal')drawWitchPotion(p,vp,eye);
   for(const s of witchSplashes)if(s.kind!=='heal')drawWitchSplash(s,vp,eye);
   for(const e of revivalEffects)drawWitchRevival(e,vp,eye);
@@ -2716,10 +2939,11 @@ function look(dx,dy,touch=false){if(state!=='playing')return;const speed=.0024*(
 
 function backToMapMenu(){
  resetRunProgress();
- state='menu';clearBleeding();clearWitchPotions();clearEnemyRevival();resetFreezeSkill();resetEnemyNavigation();spawnTimer=0;spawned=0;nextEnemyId=0;cancelLock();clearTouchInput();document.exitPointerLock?.();
+ state='menu';clearBleeding();clearWitchPotions();clearEnemyRevival();resetFreezeSkill();resetBossState();resetEnemyNavigation();spawnTimer=0;spawned=0;nextEnemyId=0;cancelLock();clearTouchInput();document.exitPointerLock?.();
  akTracers.length=0;enemies=[];bullets=[];particles=[];pickups=[];fire=false;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;headshotTimer=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;weaponSwitch=null;queuedWeapon=null;activeWeapon='ak';player=null;
  document.body.classList.remove('playing');$('hud').classList.add('hidden');$('pauseMenu').classList.add('hidden');$('endMenu').classList.add('hidden');$('notice').classList.remove('visible');$('reloadBar').classList.add('hidden');$('menu').classList.remove('hidden');
 }
+$('chestChoiceFire').addEventListener('click',()=>chooseChestReward('fireBullets'));$('chestChoiceShield').addEventListener('click',()=>chooseChestReward('fireShield'));
 for(let i=0;i<6;i++)$('upgradeChoice'+i).addEventListener('click',()=>chooseLevelUpgrade(i));
 $('mapSelect').addEventListener('change',()=>{if(state!=='menu'||pendingLock){$('mapSelect').value=currentMap.id;return;}activateMap($('mapSelect').value);});
 $('pauseMapBtn').addEventListener('click',backToMapMenu);$('endMapBtn').addEventListener('click',backToMapMenu);
@@ -2748,7 +2972,7 @@ document.addEventListener('mousemove',event=>handleMouseLook(event),{passive:tru
 canvas.addEventListener('mousedown',e=>{if(state!=='playing')return;if(e.button===0)startFiring();if(e.button===2)e.preventDefault();});
 document.addEventListener('mouseup',e=>{if(e.button===0)stopFiring();});
 document.addEventListener('contextmenu',e=>{if(state==='playing')e.preventDefault();});
-document.addEventListener('keydown',e=>{if(state==='upgrading'){if(/^Digit[1-6]$/.test(e.code)){e.preventDefault();if(!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey)chooseLevelUpgrade(Number(e.code.slice(-1))-1);}return;}if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target?.tagName))return;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Escape','ShiftLeft','ShiftRight'].includes(e.code)&&state==='playing')e.preventDefault();if(e.repeat&&['Escape','KeyP','KeyR','Digit1','Digit3','KeyQ'].includes(e.code))return;if(e.code==='Escape'){if(pendingLock)cancelLock();if(state==='playing')pause();return;}if(e.code==='KeyP'){if(state==='playing')pause();else if(state==='paused')resume();return;}if(state!=='playing')return;keys[e.code]=true;if(!e.ctrlKey&&!e.metaKey&&!e.altKey){if(e.code==='Digit1')requestWeapon('ak');if(e.code==='Digit3')requestWeapon('knife');if(e.code==='KeyQ'){e.preventDefault();castFreezeSkill();}}if(e.code==='KeyR')reloadGun();if(e.code==='Space')jump();if(e.code==='KeyF')startFiring();});
+document.addEventListener('keydown',e=>{if(state==='chest'){if(['Digit1','Digit2'].includes(e.code)){e.preventDefault();if(!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey)chooseChestReward(e.code==='Digit1'?'fireBullets':'fireShield');}return;}if(state==='upgrading'){if(/^Digit[1-6]$/.test(e.code)){e.preventDefault();if(!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey)chooseLevelUpgrade(Number(e.code.slice(-1))-1);}return;}if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target?.tagName))return;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Escape','ShiftLeft','ShiftRight'].includes(e.code)&&state==='playing')e.preventDefault();if(e.repeat&&['Escape','KeyP','KeyR','Digit1','Digit3','KeyQ'].includes(e.code))return;if(e.code==='Escape'){if(pendingLock)cancelLock();if(state==='playing')pause();return;}if(e.code==='KeyP'){if(state==='playing')pause();else if(state==='paused')resume();return;}if(state!=='playing')return;keys[e.code]=true;if(!e.ctrlKey&&!e.metaKey&&!e.altKey){if(e.code==='Digit1')requestWeapon('ak');if(e.code==='Digit3')requestWeapon('knife');if(e.code==='KeyQ'){e.preventDefault();castFreezeSkill();}}if(e.code==='KeyR')reloadGun();if(e.code==='Space')jump();if(e.code==='KeyF')startFiring();});
 document.addEventListener('keyup',e=>{keys[e.code]=false;if(e.code==='KeyF')stopFiring();});
 window.addEventListener('blur',()=>{clearTouchInput();if(state==='playing')pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTouchInput();if(state==='playing')pause();}});
 const joystick=$('joystick');function joy(e){const r=joystick.getBoundingClientRect(),radius=Math.max(1,(r.width-$('stick').getBoundingClientRect().width)/2-6),sx=e.clientX-r.left-r.width/2,sy=e.clientY-r.top-r.height/2,rotated=isMobilePortrait(),dx=rotated?sy:sx,dy=rotated?-sx:sy,n=Math.hypot(dx,dy),factor=Math.min(1,radius/(n||1));touchMove.x=dx*factor/radius;touchMove.z=dy*factor/radius;$('stick').style.transform=`translate(${dx*factor}px,${dy*factor}px)`;}
@@ -2762,16 +2986,16 @@ window.screen?.orientation?.addEventListener?.('change',syncMobileOrientation);
 matchMedia('(pointer:coarse)').addEventListener?.('change',syncMobileOrientation);
 syncMobileOrientation();
 // Read-only diagnostics for validating the playable state.
-window.gameStatus=()=>({state,mode:'endless',level:runProgress.level,xp:runProgress.xp,xpNext:nextLevelXP(),maxHealth:getMaxHealth(),bulletDamage:getBulletDamage(),damageBonus:runProgress.damageBonus,reloadSpeedBonus:runProgress.reloadRanks*.1,bulletHealPercent:runProgress.leechLevel*30,freezeRanks:runProgress.freezeRanks,freezeDuration:getFreezeDurations().freeze,slowDuration:getFreezeDurations().slow,freezeRemaining:freezeSkill.freezeRemaining,slowRemaining:freezeSkill.slowRemaining,freezeCooldown:freezeSkill.cooldownRemaining,freezeCasts:freezeSkill.casts,enemyCap:getEnemyCap(),fireBullets:runProgress.fireBullets,flameLinks:flameLinks.length,enemyScaling:getEnemyScaling(),upgradeChoices:runProgress.choices.slice(),survivalTime:elapsed,spawnInterval:getSpawnInterval(),spawned,map:currentMap.id,mapName:currentMap.name,wave,health:player?.hp,bleeding:bleedRemaining()>0,bleedRemaining:bleedRemaining(),ammo,reserve,enemies:enemies.length,witchPotions:witchPotions.length,witchSplashes:witchSplashes.length,enemyTypes:{milk:enemies.filter(e=>enemyKind(e)==='milk').length,dog:enemies.filter(e=>enemyKind(e)==='dog').length,witch:enemies.filter(e=>enemyKind(e)==='witch').length},score,kills,shots,hits,headshots,headshotKills,elapsed,weapon:activeWeapon,previousWeapon,switchingWeapon:!!weaponSwitch,weaponSwitchProgress:weaponSwitch?weaponSwitch.elapsed/WEAPON_SWITCH_DURATION:0,knifeAttackProgress:knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0,knifeSwings,knifeHits,recoilShot,lastRecoilDegrees:{yaw:lastRecoilYaw*180/Math.PI,pitch:lastRecoilPitch*180/Math.PI},recoilOffsetDegrees:{yaw:recoilYaw*180/Math.PI,pitch:recoilPitch*180/Math.PI},horizontalSpeed:player?.horizontalSpeed||0,accuracyThreshold:ACCURACY_SPEED_THRESHOLD,spreadDegrees:getShotSpread()*180/Math.PI,accurate:!!player&&getShotSpread()===0,crouching:player?.crouching||false,height:player?.eyeHeight,position:player?{x:player.x,y:player.y,z:player.z}:null,webgl:!!gl});
+window.gameStatus=()=>({state,mode:'endless',level:runProgress.level,xp:runProgress.xp,xpNext:nextLevelXP(),maxHealth:getMaxHealth(),bulletDamage:getBulletDamage(),damageBonus:runProgress.damageBonus,reloadSpeedBonus:runProgress.reloadRanks*.1,bulletHealPercent:runProgress.leechLevel*30,freezeRanks:runProgress.freezeRanks,freezeDuration:getFreezeDurations().freeze,slowDuration:getFreezeDurations().slow,freezeRemaining:freezeSkill.freezeRemaining,slowRemaining:freezeSkill.slowRemaining,freezeCooldown:freezeSkill.cooldownRemaining,freezeCasts:freezeSkill.casts,enemyCap:getEnemyCap(),fireBullets:runProgress.fireBullets,fireShield:runProgress.fireShield,shield:shieldState.value,maxShield:getMaxShield(),bossChests:bossChests.length,chestRewardPending,bossSpawned:bossState.spawned,bossDefeated:bossState.defeated,flameLinks:flameLinks.length,enemyScaling:getEnemyScaling(),upgradeChoices:runProgress.choices.slice(),survivalTime:elapsed,spawnInterval:getSpawnInterval(),spawned,map:currentMap.id,mapName:currentMap.name,wave,health:player?.hp,bleeding:bleedRemaining()>0,bleedRemaining:bleedRemaining(),ammo,reserve,enemies:enemies.length,witchPotions:witchPotions.length,witchSplashes:witchSplashes.length,enemyTypes:{milk:enemies.filter(e=>enemyKind(e)==='milk').length,dog:enemies.filter(e=>enemyKind(e)==='dog').length,witch:enemies.filter(e=>enemyKind(e)==='witch').length,boss:enemies.filter(e=>enemyKind(e)==='boss').length},score,kills,shots,hits,headshots,headshotKills,elapsed,weapon:activeWeapon,previousWeapon,switchingWeapon:!!weaponSwitch,weaponSwitchProgress:weaponSwitch?weaponSwitch.elapsed/WEAPON_SWITCH_DURATION:0,knifeAttackProgress:knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0,knifeSwings,knifeHits,recoilShot,lastRecoilDegrees:{yaw:lastRecoilYaw*180/Math.PI,pitch:lastRecoilPitch*180/Math.PI},recoilOffsetDegrees:{yaw:recoilYaw*180/Math.PI,pitch:recoilPitch*180/Math.PI},horizontalSpeed:player?.horizontalSpeed||0,accuracyThreshold:ACCURACY_SPEED_THRESHOLD,spreadDegrees:getShotSpread()*180/Math.PI,accurate:!!player&&getShotSpread()===0,crouching:player?.crouching||false,height:player?.eyeHeight,position:player?{x:player.x,y:player.y,z:player.z}:null,webgl:!!gl});
 gl.enable(gl.DEPTH_TEST);gl.clearColor(.35,.45,.48,1);
 let fpsStart=null,fpsFrames=0,fpsMode=null;
 function updateFPS(now){
- const mode=state==='playing'?'战斗':state==='paused'?'暂停':state==='upgrading'?'选择强化':'菜单';
+ const mode=state==='playing'?'战斗':state==='paused'?'暂停':state==='upgrading'?'选择强化':state==='chest'?'宝箱奖励':'菜单';
  if(document.hidden){fpsStart=null;return;}
  if(fpsStart===null||fpsMode!==mode){fpsStart=now;fpsFrames=0;fpsMode=mode;$('fpsCounter').textContent=`FPS · ${mode} · 测量中`;return;}
  fpsFrames++;const interval=now-fpsStart;
  if(interval>=1000){$('fpsCounter').textContent=`${Math.round(fpsFrames*1000/interval)} FPS · ${mode}`;fpsStart=now;fpsFrames=0;}
 }
 document.addEventListener('visibilitychange',()=>{fpsStart=null;fpsFrames=0;});
-function frame(now){const dt=Math.min((now-last)/1000,.04);last=now;if(state!=='upgrading')time+=dt;update(dt);render();updateFPS(now);requestAnimationFrame(frame);}requestAnimationFrame(frame);
+function frame(now){const dt=Math.min((now-last)/1000,.04);last=now;if(state!=='upgrading'&&state!=='chest')time+=dt;update(dt);render();updateFPS(now);requestAnimationFrame(frame);}requestAnimationFrame(frame);
 })();
