@@ -348,6 +348,8 @@ const ENDLESS_ENEMY_CAP=20,ENDLESS_PICKUP_CAP=48,ENDLESS_INITIAL_ENEMIES=4;
 let spawned=0,nextEnemyId=0,spawnTimer=0;
 const bossState={spawned:false,defeated:false,enemyId:null,count:0,nextLevel:20};
 let bossSpawnRetry=0;
+let smallEnemyKills=0;
+function getBossHealthScaling(){return 1+Math.floor(smallEnemyKills/20)*.2;}
 const freezeSkill={cooldownRemaining:0,freezeRemaining:0,slowRemaining:0,casts:0,frozenAt:0};
 const freezeFrame={activeDt:0,slowDt:0,normalDt:0};
 let enemyStepMoveScale=null;
@@ -396,6 +398,7 @@ function getEnemyDamageScaling(){return 1+Math.floor(kills/20)*.07;}
 function healthAfterDamage(health,amount){const remaining=health-amount;return remaining<=1e-9?0:remaining;}
 function healFromBullet(dealtDamage){if(player&&player.hp>0&&runProgress.leechLevel>0&&dealtDamage>0)player.hp=Math.min(getMaxHealth(),player.hp+dealtDamage*.3*runProgress.leechLevel);}
 function resetRunProgress(){
+ smallEnemyKills=0;
  Object.assign(runProgress,{level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,healthConverter:false,converterKills:0,damageCloakReadyAt:0});
  bossChests.length=0;chestRewardPending=false;Object.assign(shieldState,{value:0,regenStart:0,regenElapsed:0,lastHitAt:-Infinity});$('chestMenu').classList.add('hidden');
  xpAwardDeferral=0;flameLinks.length=0;
@@ -658,14 +661,14 @@ function showNotice(txt,duration=2.4){$('notice').textContent=txt;noticeTimer=du
 function getBaseEnemyHealth(type){return type==='boss'?2000*Math.pow(1.5,bossState.count):type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
 function createEnemy(type,x,z,id){
  if(!ENEMY_TYPES[type])type='milk';
- const dog=type==='dog',initialDelay=rnd(1.8,3),baseMaxHp=getBaseEnemyHealth(type),enemyScale=type==='boss'?1:getEnemyScaling(),maxHp=baseMaxHp*enemyScale,damageScale=getEnemyDamageScaling();
+ const dog=type==='dog',initialDelay=rnd(1.8,3),baseMaxHp=getBaseEnemyHealth(type),enemyScale=type==='boss'?getBossHealthScaling():getEnemyScaling(),maxHp=baseMaxHp*enemyScale,damageScale=getEnemyDamageScaling();
  return {x,z,type,y:ENEMY_TYPES[type].baseY,hp:maxHp,maxHp,baseMaxHp,enemyScale,damageScale,phase:rnd(0,6),attack:dog?initialDelay/2:type==='witch'?0:type==='boss'?1.4:(initialDelay+MILK_CHARGE)/MILK_ATTACK_RATE-MILK_CHARGE,flash:0,yaw:0,id,clawPhase:'idle',clawTimer:0,clawProgress:0,attackSide:1,strikeDone:false,casting:false,castPhase:'idle',castTimer:0,castProgress:0,castShots:0,supported:false,supportPulse:0,revivalAttempted:false,potionCooldown:0,potionPhase:'idle',potionTimer:0,potionProgress:0,potionKind:'damage',potionTarget:null,followTarget:null,followTargetId:null,bossPhase:'idle',bossProgress:0,bossTimer:0,bossAttackKind:'fireball',bossAttackYaw:0,bossTarget:null};
 }
 function rescaleEnemies(){
  const scale=getEnemyScaling(),damageScale=getEnemyDamageScaling();
  for(const enemy of enemies){
   if(!(enemy.hp>0))continue;
-  const healthScale=enemyKind(enemy)==='boss'?1:scale,previous=enemy.enemyScale||1,ratio=healthScale/previous;
+  const healthScale=enemyKind(enemy)==='boss'?getBossHealthScaling():scale,previous=enemy.enemyScale||1,ratio=healthScale/previous;
   enemy.baseMaxHp??=(enemy.maxHp??getBaseEnemyHealth(enemyKind(enemy)))/previous;
   enemy.hp*=ratio;enemy.maxHp=enemy.baseMaxHp*healthScale;enemy.enemyScale=healthScale;enemy.damageScale=damageScale;
  }
@@ -956,6 +959,7 @@ function traceEnemy(direction,range=100,allowInside=false){
 function defeatEnemy(target,headshot=false){
  const index=enemies.indexOf(target);if(index<0)return;
  const kind=enemyKind(target),dog=kind==='dog',boss=kind==='boss';score+=boss?1000:dog?200+wave*40:kind==='witch'?150+wave*30:100+wave*25;kills++;
+ if(!boss)smallEnemyKills++;
  if(runProgress.healthConverter&&++runProgress.converterKills%5===0){runProgress.maxHealthBonus++;player.hp=Math.min(getMaxHealth(),player.hp+1);showNotice('血量转换器 · 生命上限 +1',1.8);}
  if(headshot){score+=HEADSHOT_KILL_BONUS;headshotKills++;}
  burst(target.x,target.y,target.z,headshot?HEADSHOT_COLOR:palettes.lime,18);
@@ -964,7 +968,7 @@ function defeatEnemy(target,headshot=false){
  recordEnemyDeath(target);enemies.splice(index,1);
  if(kind==='witch'){enemyNavigation.grids.delete('witch-follow-'+target.id);refreshEnemySupport();}
  if(headshot)playHeadshotKillSound();else tone(210,.22,'sawtooth',.035,-140);
- if(kills%20===0)rescaleEnemies();awardEnemyExperience(kind);
+ if(kills%20===0||(!boss&&smallEnemyKills%20===0))rescaleEnemies();awardEnemyExperience(kind);
 }
 function swingKnife(){
  if(state!=='playing'||activeWeapon!=='knife'||weaponSwitch||knifeAttackTimer>0)return;
@@ -2984,7 +2988,7 @@ function jump(){if(state==='playing'&&player.ground){player.vy=5.3;player.ground
 document.addEventListener('wheel',event=>{
  if(state==='playing'&&document.pointerLockElement===canvas&&event.deltaY>0&&!event.ctrlKey&&!event.metaKey&&!event.altKey){event.preventDefault();jump();}
 },{passive:false});
-function look(dx,dy,touch=false){if(state!=='playing')return;const speed=.0024*(touch?1:sensitivity);player.yaw+=dx*speed;player.pitch=clamp(player.pitch-dy*speed,-1.1,1.1);}
+function look(dx,dy,touch=false){if(state!=='playing')return;const speed=.0024*(touch?2:sensitivity);player.yaw+=dx*speed;player.pitch=clamp(player.pitch-dy*speed,-1.1,1.1);}
 
 function backToMapMenu(){
  resetRunProgress();
@@ -3035,7 +3039,7 @@ window.screen?.orientation?.addEventListener?.('change',syncMobileOrientation);
 matchMedia('(pointer:coarse)').addEventListener?.('change',syncMobileOrientation);
 syncMobileOrientation();
 // Read-only diagnostics for validating the playable state.
-window.gameStatus=()=>({state,mode:'endless',level:runProgress.level,xp:runProgress.xp,xpNext:nextLevelXP(),maxHealth:getMaxHealth(),bulletDamage:getBulletDamage(),damageBonus:runProgress.damageBonus,reloadSpeedBonus:runProgress.reloadRanks*.1,bulletHealPercent:runProgress.leechLevel*30,freezeRanks:runProgress.freezeRanks,freezeDuration:getFreezeDurations().freeze,slowDuration:getFreezeDurations().slow,freezeRemaining:freezeSkill.freezeRemaining,slowRemaining:freezeSkill.slowRemaining,freezeCooldown:freezeSkill.cooldownRemaining,freezeCasts:freezeSkill.casts,enemyCap:getEnemyCap(),fireBullets:runProgress.fireBullets,fireShield:runProgress.fireShield,shield:shieldState.value,maxShield:getMaxShield(),bossChests:bossChests.length,chestRewardPending,bossSpawned:bossState.spawned,bossDefeated:bossState.defeated,flameLinks:flameLinks.length,enemyScaling:getEnemyScaling(),enemyDamageScaling:getEnemyDamageScaling(),dodgeChance:getDodgeChance(),dodgeCap:getDodgeCap(),damageCloak:runProgress.damageCloak,damageCloakCooldown:Math.max(0,runProgress.damageCloakReadyAt-elapsed),lastStand:runProgress.lastStand,lastStandUsed:runProgress.lastStandUsed,healthConverter:runProgress.healthConverter,converterKills:runProgress.converterKills,burningEnemies:enemies.filter(e=>e.burning).length,upgradeChoices:runProgress.choices.slice(),survivalTime:elapsed,spawnInterval:getSpawnInterval(),spawned,map:currentMap.id,mapName:currentMap.name,wave,health:player?.hp,bleeding:bleedRemaining()>0,bleedRemaining:bleedRemaining(),ammo,reserve,enemies:enemies.length,witchPotions:witchPotions.length,witchSplashes:witchSplashes.length,enemyTypes:{milk:enemies.filter(e=>enemyKind(e)==='milk').length,dog:enemies.filter(e=>enemyKind(e)==='dog').length,witch:enemies.filter(e=>enemyKind(e)==='witch').length,boss:enemies.filter(e=>enemyKind(e)==='boss').length},score,kills,shots,hits,headshots,headshotKills,elapsed,weapon:activeWeapon,previousWeapon,switchingWeapon:!!weaponSwitch,weaponSwitchProgress:weaponSwitch?weaponSwitch.elapsed/WEAPON_SWITCH_DURATION:0,knifeAttackProgress:knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0,knifeSwings,knifeHits,recoilShot,lastRecoilDegrees:{yaw:lastRecoilYaw*180/Math.PI,pitch:lastRecoilPitch*180/Math.PI},recoilOffsetDegrees:{yaw:recoilYaw*180/Math.PI,pitch:recoilPitch*180/Math.PI},horizontalSpeed:player?.horizontalSpeed||0,accuracyThreshold:ACCURACY_SPEED_THRESHOLD,spreadDegrees:getShotSpread()*180/Math.PI,accurate:!!player&&getShotSpread()===0,crouching:player?.crouching||false,height:player?.eyeHeight,position:player?{x:player.x,y:player.y,z:player.z}:null,webgl:!!gl});
+window.gameStatus=()=>({state,mode:'endless',level:runProgress.level,xp:runProgress.xp,xpNext:nextLevelXP(),maxHealth:getMaxHealth(),bulletDamage:getBulletDamage(),damageBonus:runProgress.damageBonus,reloadSpeedBonus:runProgress.reloadRanks*.1,bulletHealPercent:runProgress.leechLevel*30,freezeRanks:runProgress.freezeRanks,freezeDuration:getFreezeDurations().freeze,slowDuration:getFreezeDurations().slow,freezeRemaining:freezeSkill.freezeRemaining,slowRemaining:freezeSkill.slowRemaining,freezeCooldown:freezeSkill.cooldownRemaining,freezeCasts:freezeSkill.casts,enemyCap:getEnemyCap(),fireBullets:runProgress.fireBullets,fireShield:runProgress.fireShield,shield:shieldState.value,maxShield:getMaxShield(),bossChests:bossChests.length,chestRewardPending,bossSpawned:bossState.spawned,bossDefeated:bossState.defeated,smallEnemyKills,bossHealthScaling:getBossHealthScaling(),flameLinks:flameLinks.length,enemyScaling:getEnemyScaling(),enemyDamageScaling:getEnemyDamageScaling(),dodgeChance:getDodgeChance(),dodgeCap:getDodgeCap(),damageCloak:runProgress.damageCloak,damageCloakCooldown:Math.max(0,runProgress.damageCloakReadyAt-elapsed),lastStand:runProgress.lastStand,lastStandUsed:runProgress.lastStandUsed,healthConverter:runProgress.healthConverter,converterKills:runProgress.converterKills,burningEnemies:enemies.filter(e=>e.burning).length,upgradeChoices:runProgress.choices.slice(),survivalTime:elapsed,spawnInterval:getSpawnInterval(),spawned,map:currentMap.id,mapName:currentMap.name,wave,health:player?.hp,bleeding:bleedRemaining()>0,bleedRemaining:bleedRemaining(),ammo,reserve,enemies:enemies.length,witchPotions:witchPotions.length,witchSplashes:witchSplashes.length,enemyTypes:{milk:enemies.filter(e=>enemyKind(e)==='milk').length,dog:enemies.filter(e=>enemyKind(e)==='dog').length,witch:enemies.filter(e=>enemyKind(e)==='witch').length,boss:enemies.filter(e=>enemyKind(e)==='boss').length},score,kills,shots,hits,headshots,headshotKills,elapsed,weapon:activeWeapon,previousWeapon,switchingWeapon:!!weaponSwitch,weaponSwitchProgress:weaponSwitch?weaponSwitch.elapsed/WEAPON_SWITCH_DURATION:0,knifeAttackProgress:knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0,knifeSwings,knifeHits,recoilShot,lastRecoilDegrees:{yaw:lastRecoilYaw*180/Math.PI,pitch:lastRecoilPitch*180/Math.PI},recoilOffsetDegrees:{yaw:recoilYaw*180/Math.PI,pitch:recoilPitch*180/Math.PI},horizontalSpeed:player?.horizontalSpeed||0,accuracyThreshold:ACCURACY_SPEED_THRESHOLD,spreadDegrees:getShotSpread()*180/Math.PI,accurate:!!player&&getShotSpread()===0,crouching:player?.crouching||false,height:player?.eyeHeight,position:player?{x:player.x,y:player.y,z:player.z}:null,webgl:!!gl});
 gl.enable(gl.DEPTH_TEST);gl.clearColor(.35,.45,.48,1);
 let fpsStart=null,fpsFrames=0,fpsMode=null;
 function updateFPS(now){
