@@ -347,7 +347,7 @@ const ENDLESS_ENEMY_CAP=24,ENDLESS_PICKUP_CAP=48,ENDLESS_INITIAL_ENEMIES=4;
 let spawned=0,nextEnemyId=0,spawnTimer=0;
 const runProgress={level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0};
 const ENEMY_XP={milk:10,witch:25,dog:20};
-function nextLevelXP(level=runProgress.level){return 100+(level-1)*10;}
+function nextLevelXP(level=runProgress.level){return 100+Math.floor((level-1)/5)*10;}
 function getMaxHealth(){return 100+runProgress.maxHealthBonus;}
 function getPlayerDamageMultiplier(){return 1+runProgress.damageBonus;}
 function getBulletDamage(headshot=false){return (1+runProgress.bulletBaseBonus)*getPlayerDamageMultiplier()*(headshot?HEADSHOT_DAMAGE_MULTIPLIER:1);}
