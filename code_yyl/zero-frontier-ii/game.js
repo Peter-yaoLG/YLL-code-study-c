@@ -670,7 +670,7 @@ function rescaleEnemies(){
   enemy.hp*=ratio;enemy.maxHp=enemy.baseMaxHp*scale;enemy.enemyScale=scale;enemy.damageScale=damageScale;
  }
 }
-function randomEnemyType(){const roll=Math.random()*110;return roll<40?'milk':roll<70?'dog':'witch';}
+function randomEnemyType(){const roll=Math.random()*110;return roll<40?'milk':roll<80?'dog':'witch';}
 function getSpawnInterval(survivalTime=elapsed){return Math.max(.5,2.8*Math.pow(.86,Math.max(0,survivalTime)/30));}
 function spawnPointHidden(type,x,z){
  const settings=ENEMY_TYPES[type],zones=type==='boss'?BOSS_HIT_ZONES:type==='dog'?DOG_HIT_ZONES:type==='witch'?WITCH_HIT_ZONES:ENEMY_HIT_ZONES;
