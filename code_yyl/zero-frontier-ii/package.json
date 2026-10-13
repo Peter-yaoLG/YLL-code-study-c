@@ -1,0 +1,8 @@
+{
+  "name": "zero-frontier-ii",
+  "version": "3.0.0",
+  "private": true,
+  "description": "A browser FPS with four selectable arenas.",
+  "scripts": { "start": "node serve.cjs" },
+  "engines": { "node": ">=18" }
+}
