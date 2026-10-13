@@ -388,6 +388,7 @@ function getMaxHealth(){return 100+runProgress.maxHealthBonus;}
 function getMaxShield(){return runProgress.fireShield?50+runProgress.shieldBonus:0;}
 function getPlayerDamageMultiplier(){return 1+runProgress.damageBonus;}
 function getBulletDamage(headshot=false){return (1+runProgress.bulletBaseBonus)*getPlayerDamageMultiplier()*(headshot?HEADSHOT_DAMAGE_MULTIPLIER:1);}
+function getBulletUpgradeGain(id,level=runProgress.pendingLevels[0]??runProgress.level){return (id==='majorBullet'?3:.5)*(level>=40?4:level>=20?2:1);}
 function getReloadDuration(){return 1.65/(1+runProgress.reloadRanks*.1);}
 function getEnemyCap(){return ENDLESS_ENEMY_CAP+Math.floor(runProgress.level/10)*2;}
 function getEnemyScaling(){return 1+Math.floor(kills/20)*.15;}
@@ -410,7 +411,7 @@ function updateProgressHUD(){
 function upgradeDescription(id){
  const percent=Math.round(runProgress.damageBonus*100);
  switch(id){
-  case 'bullet':return {title:'强化弹头',text:`子弹基础伤害 +1：${1+runProgress.bulletBaseBonus} → ${2+runProgress.bulletBaseBonus}。爆头仍为 4 倍，无上限。`};
+  case 'bullet':return {title:'强化弹头',text:`子弹基础伤害 +${getBulletUpgradeGain(id)}：${1+runProgress.bulletBaseBonus} → ${1+runProgress.bulletBaseBonus+getBulletUpgradeGain(id)}。20级起加成翻倍，40级起再翻倍。爆头仍为 4 倍，无上限。`};
   case 'reload':return {title:'快速装填',text:`换弹速度 +20%：${runProgress.reloadRanks*10}% → ${Math.min(200,(runProgress.reloadRanks+2)*10)}%。最多 +200%。`};
   case 'health':return {title:'体能强化',text:`生命上限 +20：${getMaxHealth()} → ${getMaxHealth()+20}，同时恢复 20 点生命，无上限。`};
   case 'damage':return {title:'伤害强化',text:`枪械与近战伤害加成 +20%：${percent}% → ${percent+20}%，无上限。`};
@@ -419,7 +420,7 @@ function upgradeDescription(id){
   case 'majorDamage':return {title:'火力突破',text:`枪械与近战伤害加成 +30%：${percent}% → ${percent+30}%，无上限。`};
   case 'majorHealth':return {title:'生命突破',text:`生命上限 +50：${getMaxHealth()} → ${getMaxHealth()+50}，同时恢复 50 点生命，无上限。`};
   case 'freeze':return {title:'极寒延伸',text:`冰冻 ${3+runProgress.freezeRanks} → ${4+runProgress.freezeRanks} 秒，后续减速 ${2+runProgress.freezeRanks*2} → ${4+runProgress.freezeRanks*2} 秒。减速 50%，冷却 25 秒，可重复强化。`};
-  case 'majorBullet':return {title:'重型弹头',text:`子弹基础伤害 +3：${1+runProgress.bulletBaseBonus} → ${4+runProgress.bulletBaseBonus}。受伤害加成影响，爆头仍为 4 倍，无上限。`};
+  case 'majorBullet':return {title:'重型弹头',text:`子弹基础伤害 +${getBulletUpgradeGain(id)}：${1+runProgress.bulletBaseBonus} → ${1+runProgress.bulletBaseBonus+getBulletUpgradeGain(id)}。20级起加成翻倍，40级起再翻倍。受伤害加成影响，爆头仍为 4 倍，无上限。`};
   case 'shieldUpgrade':return {title:'护盾强化',text:`火焰保护罩上限 +30：${getMaxShield()} → ${getMaxShield()+30}，同时恢复 30 点护盾。停止受伤后用 5 秒回满，可重复强化。`};
  }
 }
@@ -451,14 +452,14 @@ function chooseLevelUpgrade(index){
  if(id==='dodge'&&getDodgeChance()>=getDodgeCap()-1e-9)return;
  if(id==='shieldUpgrade'&&!runProgress.fireShield)return;
  for(let i=0;i<6;i++)$('upgradeChoice'+i).disabled=true;
- if(id==='bullet')runProgress.bulletBaseBonus+=1;
+ if(id==='bullet')runProgress.bulletBaseBonus+=getBulletUpgradeGain(id);
  else if(id==='reload')runProgress.reloadRanks=Math.min(20,runProgress.reloadRanks+2);
  else if(id==='health'||id==='majorHealth'){const gain=id==='health'?20:50;runProgress.maxHealthBonus+=gain;player.hp=Math.min(getMaxHealth(),player.hp+gain);}
  else if(id==='damage'||id==='majorDamage')runProgress.damageBonus=Math.round((runProgress.damageBonus+(id==='damage'?.2:.3))*100)/100;
  else if(id==='dodge')runProgress.dodgeRanks++;
  else if(id==='leech')runProgress.leechLevel++;
  else if(id==='freeze')runProgress.freezeRanks++;
- else if(id==='majorBullet')runProgress.bulletBaseBonus+=3;
+ else if(id==='majorBullet')runProgress.bulletBaseBonus+=getBulletUpgradeGain(id);
  else if(id==='shieldUpgrade'){runProgress.shieldBonus+=30;shieldState.value=Math.min(getMaxShield(),shieldState.value+30);shieldState.regenStart=shieldState.value;shieldState.regenElapsed=0;}
  if(reload>0)reload*=getReloadDuration()/oldReloadDuration;
  runProgress.pendingLevels.shift();runProgress.choices=[];clearTouchInput();
