@@ -281,11 +281,14 @@ body:not(.playing) #shieldOverlay{display:none}
 .shield-track{height:3px;margin-top:5px;background:rgba(255,195,112,.15);overflow:hidden}
 #shieldFill{height:100%;max-width:100%;background:linear-gradient(90deg,#fa913a,#ffe1a1);transition:width .1s linear}
 #chestMenu{z-index:51;--upgrade-accent:#ffc877;background:rgba(14,12,11,.86);touch-action:pan-y;overscroll-behavior:contain}
-.chest-panel{width:min(700px,100%);max-height:calc(100dvh - 60px);overflow:auto;padding:26px 28px 18px;border:1px solid rgba(255,202,132,.22);border-top:2px solid #ffc877;background:linear-gradient(135deg,#302922,#181e1e);scrollbar-width:thin;touch-action:pan-y}
+.chest-panel{width:min(940px,100%);max-height:calc(100dvh - 60px);overflow:auto;padding:26px 28px 18px;border:1px solid rgba(255,202,132,.22);border-top:2px solid #ffc877;background:linear-gradient(135deg,#302922,#181e1e);scrollbar-width:thin;touch-action:pan-y}
 .chest-panel .eyebrow{color:#ffcf8f}.chest-panel .short-rule{background:#ffcf8f}
 #chestTitle{font-size:31px;margin:12px 0 9px;letter-spacing:3px;font-weight:600}
 #chestSubtitle{font-size:12px;line-height:1.7;color:#c5b79f;margin:0 0 18px}
-.chest-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.chest-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.chest-choice.owned .upgrade-choice-action{font-size:0}.chest-choice.owned .upgrade-choice-action::after{content:'已获得';font-size:10px}
+#defenseStatus{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);max-width:55%;font-size:10px;line-height:1.5;color:#d7e4c0;text-align:center;background:rgba(12,22,24,.55);padding:4px 8px;pointer-events:none}
+body.touch-layout #defenseStatus{font-size:8px;bottom:calc(5px + var(--safe-bottom));max-width:48%;padding:3px 5px}
 .chest-choice{min-height:216px;touch-action:pan-y}
 .chest-symbol{display:block;font-size:32px;line-height:36px;color:#ffc877;margin-bottom:9px}
 .chest-shield-icon{width:32px;height:36px;color:#ffc877;margin-bottom:9px}
@@ -302,7 +305,7 @@ body.touch-layout .chest-panel{width:min(680px,100%);max-height:calc(var(--game-
 body.touch-layout .chest-panel .eyebrow{font-size:8px}
 body.touch-layout #chestTitle{font-size:23px;margin:7px 0 6px}
 body.touch-layout #chestSubtitle{font-size:10px;margin-bottom:10px;line-height:1.5}
-body.touch-layout .chest-choices{gap:10px}
+body.touch-layout .chest-choices{gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}
 body.touch-layout .chest-choice{min-height:146px;padding:10px 12px}
 body.touch-layout .chest-symbol{font-size:23px;line-height:25px;margin-bottom:5px}
 body.touch-layout .chest-shield-icon{width:23px;height:25px;margin-bottom:5px}
