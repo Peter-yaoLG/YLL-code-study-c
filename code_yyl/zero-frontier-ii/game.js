@@ -646,7 +646,7 @@ function playHeadshotSound(){playCombatBuffer('head',.47,0);}
 function playHeadshotKillSound(){playCombatBuffer('headKill',.44,0);}
 
 function showNotice(txt,duration=2.4){$('notice').textContent=txt;noticeTimer=duration;$('notice').classList.add('visible');}
-function getBaseEnemyHealth(type){return type==='boss'?80:type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
+function getBaseEnemyHealth(type){return type==='boss'?160:type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
 function createEnemy(type,x,z,id){
  if(!ENEMY_TYPES[type])type='milk';
  const dog=type==='dog',initialDelay=rnd(1.8,3),baseMaxHp=getBaseEnemyHealth(type),enemyScale=getEnemyScaling(),maxHp=baseMaxHp*enemyScale;
