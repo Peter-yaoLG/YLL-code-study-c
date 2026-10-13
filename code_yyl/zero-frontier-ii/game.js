@@ -346,7 +346,7 @@ let state='menu',player, enemies=[],bullets=[],particles=[],pickups=[],wave=1,sc
 const witchPotions=[],witchSplashes=[],enemyCorpses=[],revivalEffects=[];
 const ENDLESS_ENEMY_CAP=20,ENDLESS_PICKUP_CAP=48,ENDLESS_INITIAL_ENEMIES=4;
 let spawned=0,nextEnemyId=0,spawnTimer=0;
-const bossState={spawned:false,defeated:false,enemyId:null};
+const bossState={spawned:false,defeated:false,enemyId:null,count:0,nextLevel:20};
 let bossSpawnRetry=0;
 const freezeSkill={cooldownRemaining:0,freezeRemaining:0,slowRemaining:0,casts:0,frozenAt:0};
 const freezeFrame={activeDt:0,slowDt:0,normalDt:0};
@@ -461,6 +461,7 @@ function chooseLevelUpgrade(index){
  resume();
 }
 function dropBossChest(target){
+ if(runProgress.fireBullets&&runProgress.fireShield){showNotice('火龙已被击败 · 两项宝箱技能均已获得',4);return;}
  if(bossChests.some(chest=>chest.sourceId===target.id)||chestRewardPending)return;
  bossChests.push({x:target.x,y:.45,z:target.z,phase:0,sourceId:target.id});
  showNotice('大火龙已被击败 · 拾取宝箱选择奖励',4);
@@ -646,7 +647,7 @@ function playHeadshotSound(){playCombatBuffer('head',.47,0);}
 function playHeadshotKillSound(){playCombatBuffer('headKill',.44,0);}
 
 function showNotice(txt,duration=2.4){$('notice').textContent=txt;noticeTimer=duration;$('notice').classList.add('visible');}
-function getBaseEnemyHealth(type){return type==='boss'?160:type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
+function getBaseEnemyHealth(type){return type==='boss'?2000*Math.pow(2.5,bossState.count):type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
 function createEnemy(type,x,z,id){
  if(!ENEMY_TYPES[type])type='milk';
  const dog=type==='dog',initialDelay=rnd(1.8,3),baseMaxHp=getBaseEnemyHealth(type),enemyScale=getEnemyScaling(),maxHp=baseMaxHp*enemyScale;
@@ -692,18 +693,18 @@ function spawnEnemy(requestedType=null){
  selected=selected||fallback;if(!selected)return null;
  const enemy=createEnemy(type,selected[0],selected[1],nextEnemyId++);enemies.push(enemy);spawned++;return enemy;
 }
-function resetBossState(){bossState.spawned=false;bossState.defeated=false;bossState.enemyId=null;bossSpawnRetry=0;}
+function resetBossState(){Object.assign(bossState,{spawned:false,defeated:false,enemyId:null,count:0,nextLevel:20});bossSpawnRetry=0;}
 function trySpawnBoss(){
- if(state!=='playing'||!player||runProgress.level<20||bossState.spawned)return null;
+ if(state!=='playing'||!player||runProgress.level<bossState.nextLevel||(bossState.spawned&&!bossState.defeated))return null;
  const enemy=spawnEnemy('boss');if(!enemy)return null;
- bossState.spawned=true;bossState.enemyId=enemy.id;
+ bossState.spawned=true;bossState.defeated=false;bossState.enemyId=enemy.id;bossState.count++;bossState.nextLevel+=20;
  showNotice('小 Boss 来袭 · 火龙奶娃',3.5);tone(145,.35,'sawtooth',.035,-65);return enemy;
 }
 function updateEndlessSpawns(dt){
  if(state!=='playing'||dt<=0)return;
  const interval=getSpawnInterval();
- // The one-off boss takes the next safe slot; unsafe or crowded frames only postpone it.
- if(runProgress.level>=20&&!bossState.spawned){bossSpawnRetry=Math.max(0,bossSpawnRetry-dt);if(bossSpawnRetry<=1e-9){spawnTimer=trySpawnBoss()?interval:.35;bossSpawnRetry=.35;}return;}
+ // Each twenty-level milestone queues one boss; the previous boss must be defeated first.
+ if(runProgress.level>=bossState.nextLevel&&(!bossState.spawned||bossState.defeated)){bossSpawnRetry=Math.max(0,bossSpawnRetry-dt);if(bossSpawnRetry<=1e-9){spawnTimer=trySpawnBoss()?interval:.35;bossSpawnRetry=.35;}return;}
  // A full arena or delayed frame never banks a burst of overdue spawns.
  if(enemies.length>=getEnemyCap()){spawnTimer=interval;return;}
  spawnTimer-=dt;if(spawnTimer>1e-9)return;
