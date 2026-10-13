@@ -78,20 +78,20 @@ body.touch-layout .start-button svg{width:23px;height:23px}
 body.touch-layout .best-record,body.touch-layout .sector-marker,body.touch-layout .header-status,body.touch-layout .footer-code,body.touch-layout .control-guide{display:none}
 body.touch-layout .menu-footer{left:max(24px,var(--safe-left));right:max(24px,var(--safe-right));bottom:max(10px,var(--safe-bottom));padding-top:8px}
 body.touch-layout .mobile-hint{display:block;color:#a3b6ad;font-size:9px;letter-spacing:.5px;line-height:1.6;margin:0}
-body.touch-layout .hud-top-left{left:calc(120px + var(--safe-left));top:calc(18px + var(--safe-top))}
+body.touch-layout .hud-top-left{left:calc(159px + var(--safe-left));top:calc(18px + var(--safe-top))}
 body.touch-layout .hud-operation,body.touch-layout .hud-controls,body.touch-layout .ammo-footer,body.touch-layout .weapon-switch-hint{display:none}
 body.touch-layout .wave-label{font-size:10px;letter-spacing:1px;gap:6px}
 body.touch-layout .wave-label strong{font-size:15px;margin-left:4px}
 body.touch-layout .remaining-label{font-size:8px;letter-spacing:.3px;gap:4px;margin-top:8px}
 body.touch-layout .remaining-label b{font-size:11px}
 body.touch-layout .remaining-label>span{margin:0 2px}
-body.touch-layout .mission-clock{left:50%;top:calc(12px + var(--safe-top));transform:translateX(-50%);text-align:center}
+body.touch-layout .mission-clock{left:calc(50% + 32px);top:calc(12px + var(--safe-top));transform:translateX(-50%);text-align:center}
 body.touch-layout .mission-clock strong{font-size:20px;margin-top:5px}
 body.touch-layout .radar{right:calc(14px + var(--safe-right));top:calc(10px + var(--safe-top));transform:scale(.55);transform-origin:top right}
 body.touch-layout .hud-pause{right:calc(120px + var(--safe-right));top:calc(12px + var(--safe-top));width:30px;height:30px}
 body.touch-layout .hud-fullscreen{right:calc(120px + var(--safe-right));top:calc(49px + var(--safe-top));height:30px}
 /* Health deliberately overlaps the lower joystick; its overlay passes touches through. */
-body.touch-layout .health-panel{left:calc(18px + var(--safe-left));bottom:calc(12px + var(--safe-bottom));width:136px;height:60px;padding:6px;gap:6px;border-radius:6px;background:rgba(12,20,22,.54);pointer-events:none;text-shadow:0 1px 3px #07100d}
+body.touch-layout .health-panel{left:calc(34px + var(--safe-left));bottom:calc(12px + var(--safe-bottom));width:163.2px;height:60px;padding:6px;gap:6px;border-radius:6px;background:rgba(12,20,22,.54);pointer-events:none;text-shadow:0 1px 3px #07100d}
 body.touch-layout .health-data{width:auto;min-width:0;flex:1}
 body.touch-layout .health-numbers{gap:7px;margin:3px 0 5px}
 body.touch-layout .health-numbers strong{font-size:24px}
@@ -106,10 +106,10 @@ body.touch-layout #weaponKind{font-size:6px}
 body.touch-layout #fpsCounter{left:50%;top:auto;bottom:max(7px,var(--safe-bottom));transform:translateX(-50%);font-size:8px;padding:3px 5px}
 body.touch-layout.playing #mobileControls{display:block}
 body.touch-layout #mobileControls{z-index:4}
-body.touch-layout #fireBtn{left:calc(22px + var(--safe-left));top:calc(18px + var(--safe-top));right:auto;bottom:auto;width:78px;height:78px}
-body.touch-layout #fireBtn svg{width:40px;height:40px}
-body.touch-layout #joystick{left:calc(18px + var(--safe-left));bottom:calc(12px + var(--safe-bottom));width:136px;height:136px}
-body.touch-layout #stick{left:43px;top:43px;width:48px;height:48px}
+body.touch-layout #fireBtn{left:calc(22px + var(--safe-left));top:calc(18px + var(--safe-top));right:auto;bottom:auto;width:117px;height:117px}
+body.touch-layout #fireBtn svg{width:60px;height:60px;opacity:.5}
+body.touch-layout #joystick{left:calc(34px + var(--safe-left));bottom:calc(12px + var(--safe-bottom));width:163.2px;height:163.2px}
+body.touch-layout #stick{left:52.8px;top:52.8px;width:57.6px;height:57.6px}
 body.touch-layout #reloadBtn{right:calc(106px + var(--safe-right));bottom:calc(70px + var(--safe-bottom));width:44px;height:44px}
 body.touch-layout #switchWeaponBtn{right:calc(106px + var(--safe-right));bottom:calc(124px + var(--safe-bottom));width:44px;height:44px}
 body.touch-layout #jumpBtn{right:calc(28px + var(--safe-right));bottom:calc(151px + var(--safe-bottom));width:44px;height:44px}
@@ -144,7 +144,12 @@ body.touch-layout #resumeBtn{grid-column:1;grid-row:4}
 body.touch-layout #restartBtn{grid-column:2;grid-row:4}
 body.touch-layout #pauseFullscreenBtn{grid-column:2;grid-row:5}
 body.touch-layout #pauseMenu .dialog-footnote{grid-column:1;grid-row:5;align-self:center;font-size:7px;line-height:1.8;letter-spacing:0;margin:0}
-body.touch-layout.mobile-narrow .mission-clock{display:none}
+/* On narrow landscape phones, keep survival time in its own compact row
+   below the left HUD: centered placement collides with that HUD at 568px. */
+body.touch-layout.mobile-narrow .mission-clock{display:flex;align-items:center;justify-content:space-between;gap:8px;left:calc(159px + var(--safe-left));right:auto;top:calc(116px + var(--safe-top));width:158px;padding:4px 7px;transform:none;background:rgba(10,20,21,.55);border-top:1px solid rgba(213,250,82,.18);text-align:left;pointer-events:none}
+body.touch-layout.mobile-narrow .mission-clock>span{font-size:0;line-height:1;letter-spacing:0;white-space:nowrap}
+body.touch-layout.mobile-narrow .mission-clock>span::after{content:'存活时间';font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;font-size:8px;line-height:1.2;letter-spacing:.5px;color:#acbdb2}
+body.touch-layout.mobile-narrow .mission-clock strong{font-size:17px;line-height:1;margin:0;letter-spacing:.8px}
 body.touch-layout.mobile-compact .radar{transform:scale(.5)}
 body.touch-layout.mobile-compact .remaining-label{margin-top:5px}
 body.touch-layout.mobile-compact .intro{top:calc(59px + var(--safe-top));bottom:calc(43px + var(--safe-bottom));column-gap:18px}
@@ -181,3 +186,64 @@ body.touch-layout.mobile-compact .map-brief #mapDescription{font-size:8px;line-h
 @media(max-height:640px){:where(body:not(.touch-layout)) .mission-brief.map-brief{width:300px}:where(body:not(.touch-layout)) .map-control{min-height:32px}:where(body:not(.touch-layout)) .map-control select{height:30px;font-size:10px}:where(body:not(.touch-layout)) .map-brief #mapDescription{margin-top:5px;font-size:9px}:where(body:not(.touch-layout)) .map-brief .map-tactics{font-size:8px}}
 @media(max-height:780px) and (min-width:801px){:where(body:not(.touch-layout)) .map-brief .map-tactics{display:none}}
 @media(max-height:420px){:where(body:not(.touch-layout)) .map-brief #mapDescription{display:block;font-size:8px;line-height:1.5}:where(body:not(.touch-layout)) .map-brief .map-tactics{display:none}}
+
+/* Run progression and a paused, three-choice upgrade dialog. */
+.level-panel{width:190px;max-width:100%;margin-top:13px;padding:8px 10px;background:rgba(10,20,21,.65);border:1px solid rgba(213,250,82,.19);pointer-events:none}
+.level-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;line-height:1.2}
+.level-badge{font-size:10px;color:var(--lime);letter-spacing:.5px;white-space:nowrap}
+.level-badge strong{font-size:17px;font-weight:500;margin-left:3px}
+.xp-numbers{display:flex;align-items:baseline;gap:5px;font-size:10px;color:#b7c6bd;white-space:nowrap}
+.xp-numbers b{font-weight:500;color:#edf2ef}.xp-divider{opacity:.45}.xp-unit{font-size:8px;color:#879f91;margin-left:3px}
+.xp-track{height:3px;margin-top:7px;overflow:hidden;background:rgba(202,224,205,.16)}
+#xpFill{height:100%;max-width:100%;background:var(--lime);transition:width .15s ease-out}
+.result-level{display:flex;align-items:baseline;justify-content:space-between;padding-top:12px;color:#a8bcae;font-size:10px;letter-spacing:.6px}
+.result-level .mono{color:var(--lime);font-size:11px}.result-level strong{font-weight:500;font-size:18px;margin-left:4px}
+#upgradeMenu{z-index:50;--upgrade-accent:var(--lime);background:rgba(7,15,17,.87);backdrop-filter:blur(7px);pointer-events:auto;touch-action:pan-y;overscroll-behavior:contain;cursor:default}
+#upgradeMenu.major-upgrade{--upgrade-accent:#ffd17c}
+.upgrade-panel{width:min(900px,100%);max-height:calc(100dvh - 60px);overflow:auto;padding:28px 30px 20px;border:1px solid rgba(180,210,186,.18);border-top:2px solid var(--upgrade-accent);background:linear-gradient(125deg,#1c2a2b,#101d20);box-shadow:0 24px 80px #0008;scrollbar-width:thin;touch-action:pan-y}
+.upgrade-header{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.upgrade-header .eyebrow{color:var(--upgrade-accent);font-size:9px}.upgrade-header .short-rule{background:var(--upgrade-accent)}
+#upgradeTitle{font-size:32px;line-height:1.2;letter-spacing:3px;font-weight:600;margin:14px 0 0}
+.upgrade-pause-label{display:flex;align-items:center;gap:7px;color:#a7bcb1;font-size:10px;letter-spacing:.8px;white-space:nowrap}
+.upgrade-pause-label .status-dot{background:var(--upgrade-accent);box-shadow:none}
+#upgradeSubtitle{margin:12px 0 22px;color:#aabeb3;font-size:12px;line-height:1.7;letter-spacing:.4px}
+.upgrade-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:stretch}
+.upgrade-choice{min-width:0;min-height:224px;display:flex;flex-direction:column;align-items:stretch;padding:19px 19px 15px;text-align:left;color:var(--white);background:linear-gradient(150deg,rgba(73,100,87,.20),rgba(13,24,25,.72));border:1px solid rgba(190,216,197,.24);border-radius:2px;user-select:none;-webkit-user-select:none;touch-action:manipulation;pointer-events:auto;transition:background .12s,border-color .12s,box-shadow .12s}
+.upgrade-choice-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;color:var(--upgrade-accent)}
+.upgrade-choice-top kbd{display:grid;place-items:center;width:27px;height:27px;border:1px solid rgba(184,212,194,.3);background:rgba(6,16,17,.45);font:12px Consolas,monospace;color:#c1d0c7;border-radius:2px}
+.upgrade-choice-symbol{font-size:28px;font-weight:300;line-height:1}
+.upgrade-choice-title{display:block;font-size:19px;font-weight:600;line-height:1.45;letter-spacing:.7px;overflow-wrap:anywhere}
+.upgrade-choice-description{display:block;margin-top:10px;color:#a9bbb2;font-size:12px;line-height:1.8;overflow-wrap:anywhere}
+.upgrade-choice-action{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:auto;padding-top:22px;color:var(--upgrade-accent);font-size:10px;letter-spacing:1px}
+.upgrade-choice-action>span{font-size:18px;line-height:1}
+.upgrade-choice:focus-visible{outline:2px solid var(--upgrade-accent);outline-offset:3px;border-color:var(--upgrade-accent)}
+.upgrade-choice:active{border-color:var(--upgrade-accent);background:rgba(114,146,76,.2)}
+.upgrade-choice:disabled{opacity:.48;cursor:default}
+.upgrade-instructions{display:flex;justify-content:space-between;gap:12px;margin:17px 0 0;font-size:9px;line-height:1.7;letter-spacing:.4px;color:#7f9b8b}
+.upgrade-instructions kbd{font:10px Consolas,monospace;color:#c3d1c7}.upgrade-touch-hint{display:none}
+#upgradeMenu:not(.hidden)~#mobileControls{visibility:hidden;pointer-events:none}
+@media(hover:hover){.upgrade-choice:not(:disabled):hover{border-color:var(--upgrade-accent);background:rgba(92,126,68,.20);box-shadow:inset 0 0 0 1px rgba(213,250,82,.10)}}
+body.touch-layout .level-panel{width:158px;margin-top:6px;padding:5px 7px}
+body.touch-layout .level-badge{font-size:8px}body.touch-layout .level-badge strong{font-size:13px}
+body.touch-layout .xp-numbers{font-size:8px;gap:4px}body.touch-layout .xp-unit{font-size:7px;margin-left:1px}
+body.touch-layout .xp-track{height:2px;margin-top:5px}
+body.touch-layout .upgrade-panel{width:min(860px,100%);max-height:calc(var(--game-height,100dvh) - var(--safe-top) - var(--safe-bottom) - 24px);padding:16px 19px 12px}
+body.touch-layout .upgrade-header{gap:14px}body.touch-layout .upgrade-header .eyebrow{font-size:8px;letter-spacing:1.4px}
+body.touch-layout #upgradeTitle{font-size:25px;letter-spacing:2px;margin-top:8px}
+body.touch-layout .upgrade-pause-label{font-size:9px;letter-spacing:.3px}
+body.touch-layout #upgradeSubtitle{font-size:10px;margin:8px 0 13px;line-height:1.5}
+body.touch-layout .upgrade-choices{gap:10px}
+body.touch-layout .upgrade-choice{min-height:156px;padding:12px 13px 10px}
+body.touch-layout .upgrade-choice-top{margin-bottom:10px}body.touch-layout .upgrade-choice-top kbd{width:22px;height:22px;font-size:10px}
+body.touch-layout .upgrade-choice-symbol{font-size:23px}body.touch-layout .upgrade-choice-title{font-size:15px;letter-spacing:.4px}
+body.touch-layout .upgrade-choice-description{font-size:10px;line-height:1.65;margin-top:6px}
+body.touch-layout .upgrade-choice-action{font-size:9px;padding-top:12px}
+body.touch-layout .upgrade-instructions{font-size:8px;margin-top:10px;letter-spacing:.2px}
+body.touch-layout .upgrade-desktop-hint{display:none}body.touch-layout .upgrade-touch-hint{display:inline}
+body.touch-layout .result-level{padding-top:8px;font-size:9px}body.touch-layout .result-level strong{font-size:16px}
+body.touch-layout.mobile-compact .upgrade-panel{padding:12px 16px 10px}
+body.touch-layout.mobile-compact .upgrade-choice{min-height:142px;padding:10px 11px}
+body.touch-layout.mobile-compact .upgrade-choice-top{margin-bottom:7px}
+@media(max-width:600px){:where(body:not(.touch-layout)) .upgrade-panel{padding:20px 16px 15px}:where(body:not(.touch-layout)) .upgrade-header{gap:10px}:where(body:not(.touch-layout)) #upgradeTitle{font-size:25px}:where(body:not(.touch-layout)) .upgrade-choices{gap:9px}:where(body:not(.touch-layout)) .upgrade-choice{padding:13px 10px;min-height:220px}:where(body:not(.touch-layout)) .upgrade-choice-title{font-size:15px}:where(body:not(.touch-layout)) .upgrade-choice-description{font-size:10px}:where(body:not(.touch-layout)) .upgrade-instructions{font-size:8px}}
+@media(max-height:540px){:where(body:not(.touch-layout)) .upgrade-panel{max-height:calc(100dvh - 36px);padding-top:18px}:where(body:not(.touch-layout)) .upgrade-choice{min-height:180px}:where(body:not(.touch-layout)) .upgrade-choice-top{margin-bottom:12px}}
+@media(prefers-reduced-motion:reduce){#xpFill,.upgrade-choice{transition:none}}

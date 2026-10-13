@@ -10,8 +10,8 @@ const gl=canvas.getContext('webgl',{antialias:false,alpha:false,powerPreference:
 const MAX_RENDER_PIXELS=1920*1080,MAX_RENDER_DPR=1;
 if(!gl){$('startBtn').disabled=true;$('startBtn').textContent='此浏览器未开启 WebGL，请换用 Chrome 或 Edge';return;}
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), rnd=(a,b)=>a+Math.random()*(b-a);
-const STANDING_EYE_HEIGHT=1.7,CROUCHING_EYE_HEIGHT=.95,WALK_SPEED=6.24,CROUCH_SPEED=2.86;
-const ACCURACY_SPEED_THRESHOLD=3.0,MOVE_ACCELERATION=42,RELEASE_DECELERATION=18,COUNTER_STRAFE_DECELERATION=60;
+const STANDING_EYE_HEIGHT=1.7,CROUCHING_EYE_HEIGHT=.95,WALK_SPEED=7.488,CROUCH_SPEED=3.432;
+const ACCURACY_SPEED_THRESHOLD=3.6,MOVE_ACCELERATION=50.4,RELEASE_DECELERATION=21.6,COUNTER_STRAFE_DECELERATION=72;
 const MOVING_SPREAD_MIN=.7*Math.PI/180,MOVING_SPREAD_MAX=5.88*Math.PI/180,AIR_SPREAD=5.5*Math.PI/180;
 const HEADSHOT_DAMAGE_MULTIPLIER=4,HEADSHOT_KILL_BONUS=50;
 const BLEED_DURATION=3,BLEED_INTERVAL=1,BLEED_DAMAGE=3;
@@ -19,7 +19,7 @@ const BLEED_DURATION=3,BLEED_INTERVAL=1,BLEED_DAMAGE=3;
 const ENEMY_HIT_ZONES=[[0,0,0,.79,'body'],[0,.83,0,.32,'head'],[-.28,-.91,.12,.27,'body'],[.28,-.91,.12,.27,'body']];
 const DOG_HIT_ZONES=[[0,-.13,-.13,.53,'body'],[0,.12,.47,.38,'head'],[0,-.01,.81,.22,'head'],[-.325,-.64,.53,.23,'body'],[.325,-.64,.53,.23,'body'],[-.368,-.65,-.32,.21,'body'],[.368,-.65,-.32,.21,'body']];
 const WITCH_HIT_ZONES=[[0,-.14,0,.51,'body'],[0,-.65,.015,.39,'body'],[0,.815,.015,.36,'head'],[0,.77,.36,.17,'head'],[-.34,.20,.28,.25,'body'],[.34,.20,.28,.25,'body'],[-.17,-.955,.08,.20,'body'],[.17,-.955,.08,.20,'body']];
-const ENEMY_TYPES={milk:{baseY:1.15,radius:.8,speed:1},dog:{baseY:.80,radius:.58,speed:3.3},witch:{baseY:1.05,radius:.58,speed:.65}};
+const ENEMY_TYPES={milk:{baseY:1.15,radius:.8,speed:1},dog:{baseY:.80,radius:.58,speed:3.3},witch:{baseY:1.05,radius:.58,speed:1}};
 const HEADSHOT_COLOR=[1,.70,.30];
 const V=(x=0,y=0,z=0)=>({x,y,z}), length=v=>Math.hypot(v.x,v.y,v.z);
 const IDENTITY_MODEL=new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
@@ -342,6 +342,79 @@ const effectData={values:new Float32Array(65536),length:0,push(x,y,z,nx,ny,nz,r,
 function drawEffects(vp,eye){if(!effectData.length)return;gl.bindBuffer(gl.ARRAY_BUFFER,dynamic.buffer);if(dynamic.capacity<effectData.values.byteLength){dynamic.capacity=effectData.values.byteLength;gl.bufferData(gl.ARRAY_BUFFER,dynamic.capacity,gl.DYNAMIC_DRAW);}gl.bufferSubData(gl.ARRAY_BUFFER,0,effectData.values.subarray(0,effectData.length));dynamic.count=effectData.length/10;draw(dynamic,vp,eye);}
 const mini=$('minimap').getContext('2d');
 let state='menu',player, enemies=[],bullets=[],particles=[],pickups=[],wave=1,score=0,kills=0,shots=0,hits=0,elapsed=0,ammo=30,reserve=180,reload=0,cooldown=0,transition=0,time=0,last=performance.now(),shotFlash=0,hitFlash=0,damageFlash=0,bob=0,kick=0,noticeTimer=0,moveAmount=0;
+const witchPotions=[],witchSplashes=[],enemyCorpses=[],revivalEffects=[];
+const ENDLESS_ENEMY_CAP=24,ENDLESS_PICKUP_CAP=48,ENDLESS_INITIAL_ENEMIES=4;
+let spawned=0,nextEnemyId=0,spawnTimer=0;
+const runProgress={level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0};
+const ENEMY_XP={milk:10,witch:25,dog:20};
+function nextLevelXP(level=runProgress.level){return 100+(level-1)*10;}
+function getMaxHealth(){return 100+runProgress.maxHealthBonus;}
+function getPlayerDamageMultiplier(){return 1+runProgress.damageBonus;}
+function getBulletDamage(headshot=false){return (1+runProgress.bulletBaseBonus)*getPlayerDamageMultiplier()*(headshot?HEADSHOT_DAMAGE_MULTIPLIER:1);}
+function getReloadDuration(){return 1.65/(1+runProgress.reloadRanks*.1);}
+function getEnemyScaling(){return 1+Math.floor(kills/20)*.1;}
+function healthAfterDamage(health,amount){const remaining=health-amount;return remaining<=1e-9?0:remaining;}
+function healFromBullet(dealtDamage){if(player&&player.hp>0&&runProgress.leechLevel>0&&dealtDamage>0)player.hp=Math.min(getMaxHealth(),player.hp+dealtDamage*.3*runProgress.leechLevel);}
+function resetRunProgress(){
+ Object.assign(runProgress,{level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0});
+ $('upgradeMenu').classList.add('hidden');$('upgradeMenu').classList.remove('major-upgrade');
+}
+function updateProgressHUD(){
+ const required=nextLevelXP(),value=runProgress.xp;
+ setHudText('level',runProgress.level);setHudText('xp',value);setHudText('xpNext',required);
+ setHudStyle('xpFill','width',clamp(value/required*100,0,100)+'%');
+ const track=$('xpTrack'),key=value+'/'+required;
+ if(track.dataset.xpState!==key){track.dataset.xpState=key;track.setAttribute('aria-valuenow',String(value));track.setAttribute('aria-valuemax',String(required));}
+}
+function upgradeDescription(id){
+ const percent=Math.round(runProgress.damageBonus*100);
+ switch(id){
+  case 'bullet':return {title:'强化弹头',text:`子弹基础伤害 +0.5：${1+runProgress.bulletBaseBonus} → ${1.5+runProgress.bulletBaseBonus}。爆头仍为 4 倍，无上限。`};
+  case 'reload':return {title:'快速装填',text:`换弹速度 +10%：${runProgress.reloadRanks*10}% → ${(runProgress.reloadRanks+1)*10}%。最多 +200%。`};
+  case 'health':return {title:'体能强化',text:`生命上限 +10：${getMaxHealth()} → ${getMaxHealth()+10}，同时恢复 10 点生命，无上限。`};
+  case 'damage':return {title:'伤害强化',text:`枪械与近战伤害加成 +10%：${percent}% → ${percent+10}%，无上限。`};
+  case 'leech':return {title:'子弹汲取',text:`按子弹实际造成伤害的 ${(runProgress.leechLevel+1)*30}% 回血。每次强化增加 30 个百分点，爆头也生效。`};
+  case 'majorDamage':return {title:'火力突破',text:`枪械与近战伤害加成 +30%：${percent}% → ${percent+30}%，无上限。`};
+  case 'majorHealth':return {title:'生命突破',text:`生命上限 +50：${getMaxHealth()} → ${getMaxHealth()+50}，同时恢复 50 点生命，无上限。`};
+ }
+}
+function openLevelUpgrade(){
+ if(!runProgress.pendingLevels.length||!player||player.hp<=0)return;
+ const level=runProgress.pendingLevels[0],major=level%10===0;
+ state='upgrading';clearTouchInput();cancelMilkBursts();cancelLock();
+ document.body.classList.remove('mouse-captured');document.exitPointerLock?.();$('pauseMenu').classList.add('hidden');
+ let pool=major?['leech','majorDamage','majorHealth']:['bullet','reload','health','damage'].filter(id=>id!=='reload'||runProgress.reloadRanks<20);
+ if(!major)for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+ runProgress.choices=pool.slice(0,3);
+ $('upgradeMenu').classList.toggle('major-upgrade',major);
+ $('upgradeTitle').textContent=major?`Lv ${level} · 大升级`:`Lv ${level} · 等级提升`;
+ $('upgradeSubtitle').textContent=major?'选择一项突破技能。战斗与存活计时已暂停。':'三选一强化，仅在本局生效。战斗与存活计时已暂停。';
+ for(let i=0;i<3;i++){const option=upgradeDescription(runProgress.choices[i]);$('upgradeChoiceTitle'+i).textContent=option.title;$('upgradeChoiceDescription'+i).textContent=option.text;$('upgradeChoice'+i).disabled=false;}
+ $('upgradeMenu').classList.remove('hidden');$('upgradeChoice0').focus();updateHUD();
+}
+function awardEnemyExperience(kind){
+ if(state!=='playing')return;
+ runProgress.xp+=ENEMY_XP[kind]||0;
+ while(runProgress.xp>=nextLevelXP()){runProgress.xp-=nextLevelXP();runProgress.level++;runProgress.pendingLevels.push(runProgress.level);}
+ if(runProgress.pendingLevels.length)openLevelUpgrade();else updateProgressHUD();
+}
+function chooseLevelUpgrade(index){
+ if(state!=='upgrading'||!Number.isInteger(index)||index<0||index>=runProgress.choices.length)return;
+ const id=runProgress.choices[index],oldReloadDuration=getReloadDuration();
+ if(id==='reload'&&runProgress.reloadRanks>=20)return;
+ for(let i=0;i<3;i++)$('upgradeChoice'+i).disabled=true;
+ if(id==='bullet')runProgress.bulletBaseBonus+=.5;
+ else if(id==='reload')runProgress.reloadRanks++;
+ else if(id==='health'||id==='majorHealth'){const gain=id==='health'?10:50;runProgress.maxHealthBonus+=gain;player.hp=Math.min(getMaxHealth(),player.hp+gain);}
+ else if(id==='damage'||id==='majorDamage')runProgress.damageBonus=Math.round((runProgress.damageBonus+(id==='damage'?.1:.3))*100)/100;
+ else if(id==='leech')runProgress.leechLevel++;
+ if(reload>0)reload*=getReloadDuration()/oldReloadDuration;
+ runProgress.pendingLevels.shift();runProgress.choices=[];clearTouchInput();
+ if(runProgress.pendingLevels.length){openLevelUpgrade();return;}
+ $('upgradeMenu').classList.add('hidden');state='paused';$('pauseMenu').classList.remove('hidden');updateHUD();
+ // The card click/key is the user gesture needed to capture the desktop mouse again.
+ resume();
+}
 const WEAPON_SWITCH_DURATION=.60,WEAPON_STOW_DURATION=.16,KNIFE_ATTACK_DURATION=.48,KNIFE_HIT_DELAY=.12,KNIFE_REACH=2.2;
 const AK_RECOIL_RESET_DELAY=.30,AK_FIRE_INTERVAL=.10,AK_RECOIL_SCALE=.85;
 const CROSSHAIR_RECOIL_FOLLOW=0;
@@ -500,17 +573,50 @@ function playHeadshotSound(){playCombatBuffer('head',.47,0);}
 function playHeadshotKillSound(){playCombatBuffer('headKill',.44,0);}
 
 function showNotice(txt,duration=2.4){$('notice').textContent=txt;noticeTimer=duration;$('notice').classList.add('visible');}
-function spawnWave(){
- enemies=[];const count=[4,6,8][wave-1],spots=currentMap.enemies;let dogs=0;
- let witchIndex=count-1;while((witchIndex+wave)%3===0)witchIndex--;
- for(let i=0;i<count;i++){
-  const [x,z]=spots[i],type=i===witchIndex?'witch':(i+wave)%3===0?'dog':'milk',dog=type==='dog';if(dog)dogs++;
-  const maxHp=dog?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);
-  enemies.push({x,z,type,y:ENEMY_TYPES[type].baseY,hp:maxHp,maxHp,phase:rnd(0,6),attack:dog?(1.8+i*.4)/2:type==='witch'?0:(1.8+i*.4+MILK_CHARGE)/MILK_ATTACK_RATE-MILK_CHARGE,flash:0,yaw:0,id:i,clawPhase:'idle',clawTimer:0,clawProgress:0,attackSide:1,strikeDone:false,casting:false,castPhase:'idle',castTimer:0,castProgress:0,supported:false,supportPulse:0,supportTimer:0,lastSupportHeal:-Infinity});
- }
- showNotice(`第 0${wave} 波 / 奶蛙 ${count-dogs-1} · 刀盾狗 ${dogs} · 女巫 1`,3);tone(420,.15,'sine');setTimeout(()=>{if(state==='playing')tone(650,.25,'sine');},160);
+function getBaseEnemyHealth(type){return type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
+function createEnemy(type,x,z,id){
+ if(!ENEMY_TYPES[type])type='milk';
+ const dog=type==='dog',initialDelay=rnd(1.8,3),baseMaxHp=getBaseEnemyHealth(type),enemyScale=getEnemyScaling(),maxHp=baseMaxHp*enemyScale;
+ return {x,z,type,y:ENEMY_TYPES[type].baseY,hp:maxHp,maxHp,baseMaxHp,enemyScale,phase:rnd(0,6),attack:dog?initialDelay/2:type==='witch'?0:(initialDelay+MILK_CHARGE)/MILK_ATTACK_RATE-MILK_CHARGE,flash:0,yaw:0,id,clawPhase:'idle',clawTimer:0,clawProgress:0,attackSide:1,strikeDone:false,casting:false,castPhase:'idle',castTimer:0,castProgress:0,castShots:0,supported:false,supportPulse:0,revivalAttempted:false,potionCooldown:0,potionPhase:'idle',potionTimer:0,potionProgress:0,potionKind:'damage',potionTarget:null,followTarget:null,followTargetId:null};
 }
-function begin(){syncMobileOrientation();clearTouchInput();if(!touchDevice()&&document.pointerLockElement!==canvas){requestLock('start');return;}akTracers.length=0;difficulty=$('difficulty').value;player={x:currentMap.spawn[0],y:STANDING_EYE_HEIGHT,z:currentMap.spawn[1],yaw:0,pitch:0,hp:100,bleedUntil:0,bleedNextTick:0,vx:0,vz:0,horizontalSpeed:0,vy:0,ground:true,feetY:0,eyeHeight:STANDING_EYE_HEIGHT,crouching:false};activeWeapon='ak';previousWeapon='knife';weaponSwitch=null;queuedWeapon=null;knifeAttackTimer=0;knifeStrikePending=false;knifeSwings=0;knifeHits=0;wave=1;score=0;kills=0;shots=0;hits=0;headshots=0;headshotKills=0;headshotTimer=0;lastHitHeadshot=false;elapsed=0;ammo=30;reserve=180;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;fire=false;keys={};bullets=[];particles=[];pickups=currentMap.supplies.map(([x,z])=>({x,z,phase:0}));touchMove=V();$('menu').classList.add('hidden');$('pauseMenu').classList.add('hidden');$('endMenu').classList.add('hidden');$('hud').classList.remove('hidden');document.body.classList.add('playing');state='playing';prepareCombatAudio();spawnWave();tone(280,.18,'triangle',.03,250);updateHUD();}
+function rescaleEnemies(){
+ const scale=getEnemyScaling();
+ for(const enemy of enemies){
+  if(!(enemy.hp>0))continue;
+  const previous=enemy.enemyScale||1,ratio=scale/previous;
+  enemy.baseMaxHp??=(enemy.maxHp??getBaseEnemyHealth(enemyKind(enemy)))/previous;
+  enemy.hp*=ratio;enemy.maxHp=enemy.baseMaxHp*scale;enemy.enemyScale=scale;
+ }
+}
+function randomEnemyType(){const roll=Math.random()*110;return roll<40?'milk':roll<70?'dog':'witch';}
+function getSpawnInterval(survivalTime=elapsed){return Math.max(.5,2.8*Math.pow(.86,Math.max(0,survivalTime)/30));}
+function spawnEnemy(){
+ if(state!=='playing'||!player||enemies.length>=ENDLESS_ENEMY_CAP)return null;
+ const type=randomEnemyType(),radius=ENEMY_TYPES[type].radius,spots=currentMap.enemies,start=Math.floor(Math.random()*spots.length);
+ for(let i=0;i<spots.length;i++){
+  const [x,z]=spots[(start+i)%spots.length];
+  if(Math.hypot(x-player.x,z-player.z)<8||x-radius<-22.5||x+radius>22.5||z-radius<-28.5||z+radius>27.5||!canStand(x,z,radius,0))continue;
+  if(enemies.some(other=>other.hp>0&&Math.hypot(x-other.x,z-other.z)<radius+enemySettings(other).radius+.3))continue;
+  const enemy=createEnemy(type,x,z,nextEnemyId++);enemies.push(enemy);spawned++;return enemy;
+ }
+ return null;
+}
+function updateEndlessSpawns(dt){
+ if(state!=='playing'||dt<=0)return;
+ const interval=getSpawnInterval();
+ // A full arena or delayed frame never banks a burst of overdue spawns.
+ if(enemies.length>=ENDLESS_ENEMY_CAP){spawnTimer=interval;return;}
+ spawnTimer-=dt;if(spawnTimer>1e-9)return;
+ spawnTimer=spawnEnemy()?interval:.35;
+}
+function spawnWave(){
+ // Keep the original entry point for deployment; there are no subsequent waves.
+ clearWitchPotions();clearEnemyRevival();resetEnemyNavigation();enemies=[];wave=1;spawned=0;nextEnemyId=0;
+ for(let i=0;i<ENDLESS_INITIAL_ENEMIES;i++)spawnEnemy();
+ spawnTimer=enemies.length<ENDLESS_INITIAL_ENEMIES?.35:getSpawnInterval();
+ showNotice('无尽尸潮 · 坚持更久，敌人会更快抵达',3);tone(420,.15,'sine');
+}
+function begin(){syncMobileOrientation();clearTouchInput();if(!touchDevice()&&document.pointerLockElement!==canvas){requestLock('start');return;}resetRunProgress();akTracers.length=0;difficulty=$('difficulty').value;player={x:currentMap.spawn[0],y:STANDING_EYE_HEIGHT,z:currentMap.spawn[1],yaw:0,pitch:0,hp:100,bleedUntil:0,bleedNextTick:0,vx:0,vz:0,horizontalSpeed:0,vy:0,ground:true,feetY:0,eyeHeight:STANDING_EYE_HEIGHT,crouching:false};activeWeapon='ak';previousWeapon='knife';weaponSwitch=null;queuedWeapon=null;knifeAttackTimer=0;knifeStrikePending=false;knifeSwings=0;knifeHits=0;wave=1;score=0;kills=0;shots=0;hits=0;headshots=0;headshotKills=0;headshotTimer=0;lastHitHeadshot=false;elapsed=0;ammo=30;reserve=180;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;fire=false;keys={};bullets=[];particles=[];pickups=currentMap.supplies.map(([x,z])=>({x,z,phase:0}));touchMove=V();$('menu').classList.add('hidden');$('pauseMenu').classList.add('hidden');$('endMenu').classList.add('hidden');$('hud').classList.remove('hidden');document.body.classList.add('playing');state='playing';prepareCombatAudio();spawnWave();tone(280,.18,'triangle',.03,250);updateHUD();}
 function lockFailed(error,generation){if(generation!==lockGeneration||!pendingLock)return;$('lockMenu').classList.remove('hidden');$('lockMessage').textContent=state==='paused'?'鼠标未能重新锁定，游戏保持暂停。':'当前窗口未能锁定鼠标，游戏尚未开始。';$('lockDetails').textContent=`请在 Chrome / Edge 独立窗口打开游戏地址 ${gameAddress}，再点击开始行动，或点击下方按钮重试。`;$('retryLockBtn').disabled=false;document.body.dataset.lockError=error?.name||'PointerLockError';console.warn('Pointer lock unavailable:',error?.name,error?.message);}
 function issueLockRequest(generation,raw,fallback=false){
  if(generation!==lockGeneration||!pendingLock)return;
@@ -536,9 +642,15 @@ function issueLockRequest(generation,raw,fallback=false){
 }
 function requestLock(action){pendingLock=action;const generation=++lockGeneration;lockUsesPromise=false;lockRequest=null;rawLookActive=false;$('lockMenu').classList.remove('hidden');$('lockMessage').textContent='正在启用鼠标控制…';$('lockDetails').textContent='成功后将隐藏光标，视角可连续转动。按 Esc 可释放鼠标并暂停。';$('retryLockBtn').disabled=true;if(!canvas.requestPointerLock){lockFailed({name:'NotSupportedError'},generation);return;}issueLockRequest(generation,rawMouseSupported);}
 function cancelLock(){pendingLock=null;lockGeneration++;lockRequest=null;$('lockMenu').classList.add('hidden');$('retryLockBtn').disabled=false;}
-function pause(){if(state!=='playing')return;state='paused';clearTouchInput();$('pauseMenu').classList.remove('hidden');document.body.classList.remove('mouse-captured');document.exitPointerLock?.();}
+function pause(){if(state!=='playing')return;cancelMilkBursts();state='paused';clearTouchInput();$('pauseMenu').classList.remove('hidden');document.body.classList.remove('mouse-captured');document.exitPointerLock?.();}
 function resume(){if(state!=='paused')return;syncMobileOrientation();clearTouchInput();if(!touchDevice()&&document.pointerLockElement!==canvas){requestLock('resume');return;}$('pauseMenu').classList.add('hidden');state='playing';}
-function end(win){state=win?'won':'lost';clearBleeding();akTracers.length=0;clearTouchInput();document.exitPointerLock?.();document.body.classList.remove('playing');$('hud').classList.add('hidden');$('endMenu').classList.remove('hidden');$('endTitle').textContent=win?'任务完成':'信号中断';$('endSubtitle').textContent=win?'区域已清空。干得漂亮，干员。':'你的战术还有进化空间。重新部署，再试一次。';$('endScore').textContent=String(score).padStart(5,'0');$('endKills').textContent=kills+' / 18';$('endHeadshots').textContent=headshotKills;$('endAccuracy').textContent=(shots?Math.round(hits/shots*100):0)+'%';$('endTime').textContent=formatTime(elapsed);if(score>best){best=score;try{localStorage.setItem('zf2-best',best);}catch{}$('bestScore').textContent=String(best).padStart(5,'0');}tone(win?620:130,.7,'triangle',.08,win?220:-80);}
+function end(){
+ if(!player||player.hp>0)return;
+ state='lost';$('upgradeMenu').classList.add('hidden');clearBleeding();clearWitchPotions();clearEnemyRevival();akTracers.length=0;clearTouchInput();document.exitPointerLock?.();document.body.classList.remove('playing');$('hud').classList.add('hidden');$('endMenu').classList.remove('hidden');
+ $('endTitle').textContent='生存结束';$('endSubtitle').textContent=`你坚持了 ${formatTime(elapsed)}，消灭了 ${kills} 个敌人。重新部署，挑战更长存活时间。`;
+ $('endScore').textContent=String(score).padStart(5,'0');$('endKills').textContent=String(kills);$('endHeadshots').textContent=headshotKills;$('endAccuracy').textContent=(shots?Math.round(hits/shots*100):0)+'%';$('endTime').textContent=formatTime(elapsed);$('endLevel').textContent=runProgress.level;
+ if(score>best){best=score;try{localStorage.setItem('zf2-best',best);}catch{}$('bestScore').textContent=String(best).padStart(5,'0');}tone(130,.7,'triangle',.08,-80);
+}
 function formatTime(t){return `${String(Math.floor(t/60)).padStart(2,'0')}:${String(Math.floor(t%60)).padStart(2,'0')}`;}
 function rayBox(o,d,b){let min=0,max=100;for(const [key,lo,hi] of [['x',b.x-b.w/2,b.x+b.w/2],['y',0,b.h],['z',b.z-b.d/2,b.z+b.d/2]]){if(Math.abs(d[key])<1e-8){if(o[key]<lo||o[key]>hi)return Infinity;}else{let a=(lo-o[key])/d[key],c=(hi-o[key])/d[key];if(a>c)[a,c]=[c,a];min=Math.max(min,a);max=Math.min(max,c);if(min>max)return Infinity;}}return min;}
 function wallDistance(o,d){let n=100;for(const b of walls)n=Math.min(n,rayBox(o,d,b));return n;}
@@ -685,7 +797,7 @@ function drawAKTracers(out,eye){
   tracerQuad(out,a,b,u,width);tracerQuad(out,a,b,v,width);
  }
 }
-function reloadGun(){if(state!=='playing'||activeWeapon!=='ak'||weaponSwitch||reload>0||ammo===30||reserve<=0)return;reload=1.65;fire=false;resetAKRecoil();tone(320,.08,'square',.025,-150);showNotice('更换弹匣',1.65);}
+function reloadGun(){if(state!=='playing'||activeWeapon!=='ak'||weaponSwitch||reload>0||ammo===30||reserve<=0)return;reload=getReloadDuration();fire=false;resetAKRecoil();tone(320,.08,'square',.025,-150);showNotice('更换弹匣',reload);}
 function burst(x,y,z,c,n=9){for(let i=0;i<n;i++)particles.push({x,y,z,vx:rnd(-3,3),vy:rnd(.4,4),vz:rnd(-3,3),life:rnd(.2,.65),c});}
 function requestWeapon(next){
  if(state!=='playing'||!['ak','knife'].includes(next))return;
@@ -736,10 +848,11 @@ function defeatEnemy(target,headshot=false){
  const kind=enemyKind(target),dog=kind==='dog';score+=dog?200+wave*40:kind==='witch'?150+wave*30:100+wave*25;kills++;
  if(headshot){score+=HEADSHOT_KILL_BONUS;headshotKills++;}
  burst(target.x,target.y,target.z,headshot?HEADSHOT_COLOR:palettes.lime,18);
- if(dog||kills%3===0)pickups.push({x:target.x,y:.45,z:target.z,phase:0,health:dog?40:25,ammo:dog?45:30,kind:dog?'dog':'milk'});
- enemies.splice(index,1);
- if(kind==='witch')refreshEnemySupport();
+ if(dog||kills%3===0){if(pickups.length>=ENDLESS_PICKUP_CAP)pickups.shift();pickups.push({x:target.x,y:.45,z:target.z,phase:0,health:dog?40:25,ammo:dog?45:30,kind:dog?'dog':'milk'});}
+ recordEnemyDeath(target);enemies.splice(index,1);
+ if(kind==='witch'){enemyNavigation.grids.delete('witch-follow-'+target.id);refreshEnemySupport();}
  if(headshot)playHeadshotKillSound();else tone(210,.22,'sawtooth',.035,-140);
+ if(kills%20===0)rescaleEnemies();awardEnemyExperience(kind);
 }
 function swingKnife(){
  if(state!=='playing'||activeWeapon!=='knife'||weaponSwitch||knifeAttackTimer>0)return;
@@ -751,7 +864,7 @@ function strikeKnife(){
  const direction=V(Math.sin(player.yaw)*Math.cos(player.pitch),Math.sin(player.pitch),-Math.cos(player.yaw)*Math.cos(player.pitch));
  const {target,distance,wall}=traceEnemy(direction,KNIFE_REACH,true);
  if(target){
-  knifeHits++;target.hp-=2;target.flash=.12;hitFlash=.14;lastHitHeadshot=false;
+  knifeHits++;target.hp=healthAfterDamage(target.hp,2*getPlayerDamageMultiplier());target.flash=.12;hitFlash=.14;lastHitHeadshot=false;
   burst(player.x+direction.x*distance,player.y+direction.y*distance,player.z+direction.z*distance,palettes.cyan,5);
   tone(180,.07,'triangle',.05,-100);if(target.hp<=0)defeatEnemy(target);
  }else if(wall<KNIFE_REACH){burst(player.x+direction.x*wall,player.y+direction.y*wall,player.z+direction.z*wall,[.9,.8,.5],3);tone(940,.065,'triangle',.025,-570);}
@@ -772,7 +885,7 @@ function shoot(){
  if(target){
   const headshot=targetZone==='head';
   hits++;if(headshot)headshots++;
-  target.hp-=headshot?HEADSHOT_DAMAGE_MULTIPLIER:1;
+  const bulletDamage=getBulletDamage(headshot),dealtDamage=Math.min(Math.max(0,target.hp),bulletDamage);target.hp=healthAfterDamage(target.hp,bulletDamage);if(dealtDamage>0)healFromBullet(dealtDamage);
   target.flash=.12;hitFlash=headshot?.20:.12;lastHitHeadshot=headshot;
   burst(player.x+direction.x*nearest,player.y+direction.y*nearest,player.z+direction.z*nearest,headshot?HEADSHOT_COLOR:palettes.cyan,headshot?7:4);
   if(headshot){
@@ -781,27 +894,27 @@ function shoot(){
   }else tone(1300,.04,'sine',.035,300);
   if(target.hp<=0)defeatEnemy(target,headshot);
  }else if(wall<90)burst(player.x+direction.x*wall,player.y+direction.y*wall,player.z+direction.z*wall,[.9,.8,.5],5);
- applyAKRecoil();
+ if(state==='playing')applyAKRecoil();
  if(ammo===0&&reserve===0){reserve=60;showNotice('紧急弹药已补给 · 按 R 换弹');}
  updateHUD();
 }
-function damage(n){player.hp=Math.max(0,player.hp-n);damageFlash=.55;tone(65,.2,'triangle',.075,-20);if(player.hp<=0)end(false);}
+function damage(n){player.hp=healthAfterDamage(player.hp,n);damageFlash=.55;tone(65,.2,'triangle',.075,-20);if(player.hp<=0)end(false);}
 function bleedRemaining(){return player?Math.max(0,player.bleedUntil-elapsed):0;}
 function clearBleeding(){
- if(player){player.bleedUntil=0;player.bleedNextTick=0;}
+ if(player){player.bleedUntil=0;player.bleedNextTick=0;player.bleedDamage=BLEED_DAMAGE;}
  setHudClass('bleedStatus','hidden',true);setHudText('bleedStatus','');
 }
-function applyBleeding(){
+function applyBleeding(damageScale=1){
  if(state!=='playing'||!player||player.hp<=0)return;
  // Repeated claws extend the duration without postponing the next damage tick.
  if(bleedRemaining()<=0)player.bleedNextTick=elapsed+BLEED_INTERVAL;
- player.bleedUntil=elapsed+BLEED_DURATION;
+ player.bleedUntil=elapsed+BLEED_DURATION;player.bleedDamage=BLEED_DAMAGE*damageScale;
 }
 function updateBleeding(){
  if(!player||player.bleedNextTick<=0)return;
  const tickThrough=Math.min(elapsed,player.bleedUntil);
  while(state==='playing'&&player.bleedNextTick<=tickThrough+1e-9){
-  player.bleedNextTick+=BLEED_INTERVAL;damage(BLEED_DAMAGE);
+  player.bleedNextTick+=BLEED_INTERVAL;damage(player.bleedDamage??BLEED_DAMAGE);
  }
  if(state==='playing'&&elapsed>=player.bleedUntil-1e-9)clearBleeding();
 }
@@ -828,16 +941,22 @@ function updateCrosshair(){
  setHudStyle('crosshair','transform',transform);setHudStyle('hitmarker','transform',transform);
 }
 function updateHUD(){
+ updateProgressHUD();
+ setHudText('maxHealth',getMaxHealth());
  const bleedSeconds=Math.ceil(Math.max(0,bleedRemaining()-1e-9));
- setHudClass('bleedStatus','hidden',bleedSeconds===0);setHudText('bleedStatus',bleedSeconds?`流血 · 3点/秒 · 剩余${bleedSeconds}秒`:'');
+ setHudClass('bleedStatus','hidden',bleedSeconds===0);setHudText('bleedStatus',bleedSeconds?`流血 · ${Number((player.bleedDamage??BLEED_DAMAGE).toFixed(2))}点/秒 · 剩余${bleedSeconds}秒`:'');
  const knife=activeWeapon==='knife';
  setHudText('weaponName',knife?'M9 BAYONET':'AK-47');setHudText('weaponKind',knife?'近战刺刀':'自动步枪');
  setHudText('weaponAction',weaponSwitch?'切换中':knife?'左键 挥砍':'R 换弹');setHudClass('ammoPanel','knife',knife);
  setHudText('switchWeaponBtn',knife?'切枪':'切刀');
- setHudText('health',Math.ceil(player.hp));setHudStyle('healthFill','width',player.hp+'%');setHudStyle('healthFill','background',player.hp<30?'#ff6767':'');setHudText('ammo',knife?'∞':String(ammo).padStart(2,'0'));setHudText('reserve',String(reserve).padStart(3,'0'));setHudText('wave',`0${wave} / 03`);setHudText('remaining',String(enemies.length).padStart(2,'0'));setHudText('score',String(score).padStart(5,'0'));setHudText('timer',formatTime(elapsed));setHudClass('reloadBar','hidden',reload<=0);setHudStyle('reloadFill','width',clamp(Math.round((1-reload/1.65)*100),0,100)+'%');}
+ setHudText('health',Math.ceil(player.hp));setHudStyle('healthFill','width',clamp(player.hp/getMaxHealth()*100,0,100)+'%');setHudStyle('healthFill','background',player.hp<getMaxHealth()*.3?'#ff6767':'');setHudText('ammo',knife?'∞':String(ammo).padStart(2,'0'));setHudText('reserve',String(reserve).padStart(3,'0'));setHudText('wave','无尽');setHudText('remaining',String(enemies.length).padStart(2,'0'));setHudText('score',String(score).padStart(5,'0'));setHudText('timer',formatTime(elapsed));setHudClass('reloadBar','hidden',reload<=0);setHudStyle('reloadFill','width',clamp(Math.round((1-reload/getReloadDuration())*100),0,100)+'%');}
 const DOG_WINDUP=.16,DOG_STRIKE=.08,DOG_RECOVER=.24,DOG_HIT_TIME=.0175,DOG_ATTACK_RANGE=2.22,DOG_HIT_RANGE=2.34;
 const MILK_CHARGE=.24,MILK_RELEASE=.20,MILK_ORB_SPEED=35,MILK_ATTACK_RATE=1.5;
-const WITCH_SUPPORT_RADIUS=7,WITCH_HEAL_INTERVAL=2,WITCH_HEAL_AMOUNT=1,WITCH_ATTACK_RATE=1.2;
+const MILK_BURST_INTERVAL=.12,MILK_BURST_COUNT=3,MILK_BURST_SPAN=MILK_BURST_INTERVAL*(MILK_BURST_COUNT-1);
+const WITCH_POTION_RANGE=16,WITCH_POTION_RADIUS=3,WITCH_POTION_DAMAGE=30;
+const WITCH_POTION_WINDUP=.4,WITCH_POTION_RECOVER=.3,WITCH_POTION_CYCLE=3.6,WITCH_POTION_GRAVITY=14,WITCH_POTION_SIZE=.12;
+const WITCH_SUPPORT_RADIUS=7,WITCH_ATTACK_RATE=1.2;
+const WITCH_REVIVAL_WINDOW=5,WITCH_REVIVAL_CHANCE=.4,WITCH_REVIVAL_HEALTH=.5;
 function enemyKind(enemy){return enemy.type==='dog'?'dog':enemy.type==='witch'?'witch':'milk';}
 function enemySettings(enemy){return ENEMY_TYPES[enemyKind(enemy)];}
 function witchCanSupport(source,target){
@@ -852,26 +971,114 @@ function refreshEnemySupport(){
   for(const source of enemies)if(witchCanSupport(source,target)){target.supported=true;break;}
  }
 }
-function updateWitchSupport(dt){
- if(state!=='playing')return;
- for(const source of enemies){
-  if(enemyKind(source)!=='witch'||source.hp<=0)continue;
-  source.supportTimer=(source.supportTimer||0)+dt;
-  if(source.supportTimer<WITCH_HEAL_INTERVAL-1e-9)continue;
-  // Start from the actual pulse frame so the per-target guard cannot skip the next heal.
-  // A slow frame produces one current pulse, never a burst of retrospective heals.
-  source.supportTimer=0;
-  for(const target of enemies){
-   if(!witchCanSupport(source,target)||!Number.isFinite(target.maxHp)||target.hp>=target.maxHp)continue;
-   if(elapsed-(target.lastSupportHeal??-Infinity)<WITCH_HEAL_INTERVAL-1e-9)continue;
-   target.hp=Math.min(target.maxHp,target.hp+WITCH_HEAL_AMOUNT);target.lastSupportHeal=elapsed;
-   target.supportPulse=1;source.supportPulse=1;
-  }
+function clearEnemyRevival(){enemyCorpses.length=0;revivalEffects.length=0;}
+function recordEnemyDeath(target){
+ if(state!=='playing'||target.hp>0||target.revivalAttempted||enemyCorpses.some(corpse=>corpse.id===target.id))return;
+ enemyCorpses.push({id:target.id,type:enemyKind(target),x:target.x,y:target.y,z:target.z,yaw:target.yaw||0,diedAt:elapsed,attempted:false,source:target});
+}
+function witchCanRevive(source,corpse){
+ if(source.hp<=0||enemyKind(source)!=='witch'||source.id===corpse.id)return false;
+ if(Math.hypot(corpse.x-source.x,corpse.z-source.z)>WITCH_SUPPORT_RADIUS)return false;
+ const from=V(source.x,source.y+.25,source.z),to=V(corpse.x,corpse.y+.15,corpse.z),delta=sub(to,from),distance=length(delta);
+ return distance<1e-8||wallDistance(from,norm(delta))>distance-1e-6;
+}
+function updateWitchRevival(dt){
+ if(state!=='playing'||!player||player.hp<=0||dt<=0)return;
+ let revivedAny=false;
+ for(let i=revivalEffects.length-1;i>=0;i--){const effect=revivalEffects[i];effect.age+=dt;if(effect.age>=effect.life)revivalEffects.splice(i,1);}
+ for(let i=enemyCorpses.length-1;i>=0;i--){
+  const corpse=enemyCorpses[i];
+  if(corpse.attempted||elapsed-corpse.diedAt>WITCH_REVIVAL_WINDOW+1e-9){enemyCorpses.splice(i,1);continue;}
+  // A crowded arena may postpone eligibility, but never the original five-second deadline.
+  if(enemies.length>=ENDLESS_ENEMY_CAP||enemies.some(enemy=>enemy.id===corpse.id))continue;
+  const source=enemies.find(enemy=>witchCanRevive(enemy,corpse));if(!source)continue;
+  corpse.attempted=true;corpse.source.revivalAttempted=true;enemyCorpses.splice(i,1);
+  if(Math.random()>=WITCH_REVIVAL_CHANCE)continue;
+  const revived=createEnemy(corpse.type,corpse.x,corpse.z,corpse.id);
+  revived.hp=revived.maxHp*WITCH_REVIVAL_HEALTH;revived.yaw=corpse.yaw;revived.revivalAttempted=true;
+  revived.attack=Math.max(revived.attack,1);revived.potionCooldown=1.2;revived.supportPulse=1;
+  enemies.push(revived);source.supportPulse=1;revivedAny=true;
+  if(revivalEffects.length>=24)revivalEffects.shift();
+  revivalEffects.push({x:corpse.x,y:0,z:corpse.z,type:corpse.type,age:0,life:1.2,radius:1.0});
  }
+ if(revivedAny)refreshEnemySupport();
+}
+function witchFollowTarget(enemy){
+ let nearest=null,nearestDistance=Infinity;
+ for(const other of enemies){
+  if(other===enemy||other.hp<=0||!Number.isFinite(other.maxHp)||other.hp>=other.maxHp)continue;
+  const distance=Math.hypot(other.x-enemy.x,other.z-enemy.z);
+  if(distance<nearestDistance){nearest=other;nearestDistance=distance;}
+ }
+ const current=enemy.followTarget;
+ if(current&&current!==enemy&&enemies.includes(current)&&current.hp>0&&Number.isFinite(current.maxHp)&&current.hp<current.maxHp&&Math.hypot(current.x-enemy.x,current.z-enemy.z)<=nearestDistance*1.5+2)nearest=current;
+ enemy.followTarget=nearest;enemy.followTargetId=nearest?.id??null;return nearest;
 }
 function updateWitchEnemy(enemy,dt){
- enemy.yaw=Math.atan2(player.x-enemy.x,player.z-enemy.z);
- enemyWalk(enemy,dt,((difficulty==='hard'?1.8:1.15)+wave*.16)*ENEMY_TYPES.witch.speed,6);
+ enemy.potionCooldown=Math.max(0,(enemy.potionCooldown||0)-dt);
+ if(enemy.potionKind==='heal'){enemy.potionKind='damage';enemy.potionPhase='idle';enemy.potionTimer=0;enemy.potionProgress=0;enemy.potionTarget=null;}
+ if(!enemy.potionPhase)enemy.potionPhase='idle';
+ if(enemy.potionPhase!=='idle'){
+  enemy.walking=false;enemy.potionTimer=(enemy.potionTimer||0)+dt;
+  if(enemy.potionTarget)enemy.yaw=Math.atan2(enemy.potionTarget.x-enemy.x,enemy.potionTarget.z-enemy.z);
+  if(enemy.potionPhase==='windup'&&enemy.potionTimer>=WITCH_POTION_WINDUP-1e-9){
+   enemy.potionTimer-=WITCH_POTION_WINDUP;enemy.potionPhase='recover';launchWitchPotion(enemy);
+  }
+  if(enemy.potionPhase==='recover'&&enemy.potionTimer>=WITCH_POTION_RECOVER-1e-9){enemy.potionPhase='idle';enemy.potionTimer=0;enemy.potionProgress=0;return;}
+  enemy.potionProgress=enemy.potionPhase==='windup'?clamp(enemy.potionTimer/WITCH_POTION_WINDUP,0,1):1-clamp(enemy.potionTimer/WITCH_POTION_RECOVER,0,1);return;
+ }
+ const leader=witchFollowTarget(enemy),target=leader||player;
+ enemy.yaw=Math.atan2(target.x-enemy.x,target.z-enemy.z);
+ enemyWalk(enemy,dt,((difficulty==='hard'?1.8:1.15)+wave*.16)*ENEMY_TYPES.witch.speed,leader?2.5:WITCH_POTION_RANGE-1,target,'witch-follow-'+(enemy.id??enemies.indexOf(enemy)));
+ const canAttack=enemy.potionCooldown<=1e-9&&Math.hypot(player.x-enemy.x,player.z-enemy.z)<=WITCH_POTION_RANGE&&visible(enemy,player);
+ if(!canAttack)return;
+ enemy.potionKind='damage';const aim=player;
+ enemy.potionTarget={x:aim.x,y:WITCH_POTION_SIZE,z:aim.z};enemy.yaw=Math.atan2(aim.x-enemy.x,aim.z-enemy.z);
+ enemy.potionPhase='windup';enemy.potionTimer=0;enemy.potionProgress=0;enemy.walking=false;
+ enemy.potionCooldown=WITCH_POTION_CYCLE;
+}
+function clearWitchPotions(){witchPotions.length=0;witchSplashes.length=0;}
+function witchPotionWallDistance(origin,direction){
+ let distance=Infinity;
+ for(const wall of walls)distance=Math.min(distance,rayBox(origin,direction,{x:wall.x,z:wall.z,w:wall.w+WITCH_POTION_SIZE*2,d:wall.d+WITCH_POTION_SIZE*2,h:wall.h+WITCH_POTION_SIZE}));
+ return distance;
+}
+function launchWitchPotion(enemy){
+ if(state!=='playing'||enemy.hp<=0||!enemies.includes(enemy)||!enemy.potionTarget||witchPotions.length>=16||(enemy.potionKind&&enemy.potionKind!=='damage'))return;
+ const sin=Math.sin(enemy.yaw),cos=Math.cos(enemy.yaw),localX=-.56525,localZ=.36605;
+ const center=V(enemy.x,enemy.y+1.07324,enemy.z),offset=V(localX*cos+localZ*sin,0,-localX*sin+localZ*cos),distance=length(offset),direction=norm(offset);
+ const safeDistance=Math.max(0,Math.min(distance,witchPotionWallDistance(center,direction)-.002)),origin=V(center.x+direction.x*safeDistance,center.y,center.z+direction.z*safeDistance);
+ const target=enemy.potionTarget,flight=clamp(Math.hypot(target.x-origin.x,target.z-origin.z)/14,.65,1.65);
+ witchPotions.push({x:origin.x,y:origin.y,z:origin.z,vx:(target.x-origin.x)/flight,vy:(target.y-origin.y+.5*WITCH_POTION_GRAVITY*flight*flight)/flight,vz:(target.z-origin.z)/flight,age:0,life:3.5,kind:'damage',source:enemy,sourceId:enemy.id,damageScale:enemy.enemyScale||1,bornAt:elapsed});
+ tone(320,.16,'sine',.027,180);
+}
+function explodeWitchPotion(potion){
+ if(state!=='playing'||potion.exploded)return;potion.exploded=true;
+ if(potion.kind&&potion.kind!=='damage')return;
+ const splash={x:potion.x,y:potion.y,z:potion.z,age:0,life:.65,radius:WITCH_POTION_RADIUS,kind:'damage'};
+ if(witchSplashes.length>=24)witchSplashes.shift();witchSplashes.push(splash);
+ tone(520,.16,'triangle',.035,-350);
+ const clearTo=target=>{
+  const delta=sub(target,splash),distance=length(delta);
+  return Math.hypot(delta.x,delta.z)<=WITCH_POTION_RADIUS&&Math.abs(delta.y)<=WITCH_POTION_RADIUS&&(distance<1e-8||wallDistance(splash,norm(delta))>distance-1e-6);
+ };
+ if(player?.hp>0&&clearTo(V(player.x,player.y-.3,player.z)))damage(WITCH_POTION_DAMAGE*(potion.damageScale??1));
+}
+function updateWitchPotions(dt){
+ if(state!=='playing'||dt<=0)return;
+ for(let i=witchSplashes.length-1;i>=0;i--){const splash=witchSplashes[i];splash.age+=dt;if(splash.age>=splash.life)witchSplashes.splice(i,1);}
+ for(let i=witchPotions.length-1;i>=0;i--){
+  const potion=witchPotions[i];if(potion.kind&&potion.kind!=='damage'){witchPotions.splice(i,1);continue;}
+  let remaining=Math.min(dt,Math.max(0,elapsed-(potion.bornAt??-Infinity)),Math.max(0,potion.life-potion.age)),impacted=false;
+  while(remaining>1e-9){
+   const step=Math.min(remaining,1/60),origin=V(potion.x,potion.y,potion.z),next=V(potion.x+potion.vx*step,potion.y+potion.vy*step-.5*WITCH_POTION_GRAVITY*step*step,potion.z+potion.vz*step),delta=sub(next,origin),distance=length(delta),direction=norm(delta);
+   const wallHit=witchPotionWallDistance(origin,direction);let contact=Math.min(distance,wallHit),hit=wallHit<=distance;
+   if(next.y<=WITCH_POTION_SIZE&&next.y<origin.y){const ground=distance*clamp((origin.y-WITCH_POTION_SIZE)/(origin.y-next.y),0,1);if(ground<=contact){contact=ground;hit=true;}}
+   potion.x=origin.x+direction.x*contact;potion.y=origin.y+direction.y*contact;potion.z=origin.z+direction.z*contact;potion.vy-=WITCH_POTION_GRAVITY*step;potion.age+=step;remaining-=step;
+   if(hit){impacted=true;break;}
+  }
+  if(impacted||potion.age>=potion.life-1e-9){witchPotions.splice(i,1);if(impacted)explodeWitchPotion(potion);if(state!=='playing')return;}
+ }
 }
 const ENEMY_NAV_STEP=.75,ENEMY_NAV_COLS=61,ENEMY_NAV_ROWS=75;
 const ENEMY_NAV_DIRECTIONS=[[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
@@ -897,8 +1104,8 @@ function enemyNavCheckGeometry(){
  const signature=walls.map(w=>`${w.x},${w.z},${w.w},${w.d},${w.h}`).join(';');
  if(signature!==enemyNavigation.signature){enemyNavigation.signature=signature;enemyNavigation.grids.clear();enemyNavigation.revision++;}
 }
-function enemyNavGrid(kind){
- enemyNavCheckGeometry();let grid=enemyNavigation.grids.get(kind);if(grid)return grid;
+function enemyNavGrid(kind,cacheKey=kind){
+ enemyNavCheckGeometry();let grid=enemyNavigation.grids.get(cacheKey);if(grid)return grid;
  const count=ENEMY_NAV_COLS*ENEMY_NAV_ROWS,radius=ENEMY_TYPES[kind].radius+.012;
  grid={radius,open:new Uint8Array(count),links:new Uint8Array(count),distance:new Float32Array(count),next:new Int32Array(count),queue:new Int32Array(count),fieldAt:-Infinity,targetX:Infinity,targetZ:Infinity,targetY:Infinity,version:0};
  for(let index=0;index<count;index++){
@@ -922,24 +1129,25 @@ function enemyNavGrid(kind){
    if(nc>=0&&nc<ENEMY_NAV_COLS&&nr>=0&&nr<ENEMY_NAV_ROWS&&grid.open[next]&&(direction<4||(grid.open[index+dc]&&grid.open[index+dr*ENEMY_NAV_COLS])))grid.links[index]|=1<<direction;
   }
  }
- enemyNavigation.geometryBuilds++;enemyNavigation.grids.set(kind,grid);return grid;
+ enemyNavigation.geometryBuilds++;enemyNavigation.grids.set(cacheKey,grid);return grid;
 }
-function enemyNavField(kind,stopDistance){
- const grid=enemyNavGrid(kind),targetX=player.x,targetZ=player.z,targetY=player.y;
- const sameTarget=grid.targetX===targetX&&grid.targetZ===targetZ&&grid.targetY===targetY;
- if(grid.fieldAt<=elapsed&&(sameTarget||elapsed-grid.fieldAt<.25))return grid;
- grid.fieldAt=elapsed;grid.targetX=targetX;grid.targetZ=targetZ;grid.targetY=targetY;grid.version++;enemyNavigation.fieldBuilds++;
+function enemyNavField(kind,stopDistance,target=player,cacheKey=kind){
+ const grid=enemyNavGrid(kind,cacheKey),targetX=target.x,targetZ=target.z,targetY=target.y;
+ const sameGoal=grid.target===target&&grid.stopDistance===stopDistance;
+ const sameTarget=sameGoal&&grid.targetX===targetX&&grid.targetZ===targetZ&&grid.targetY===targetY;
+ if(grid.fieldAt<=elapsed&&(sameTarget||(sameGoal&&elapsed-grid.fieldAt<.25)))return grid;
+ grid.fieldAt=elapsed;grid.target=target;grid.stopDistance=stopDistance;grid.targetX=targetX;grid.targetZ=targetZ;grid.targetY=targetY;grid.version++;enemyNavigation.fieldBuilds++;
  const distances=grid.distance,next=grid.next,queue=grid.queue;
  distances.fill(Infinity);next.fill(-1);let size=0;
  for(let index=0;index<grid.open.length;index++)if(grid.open[index]){
-  const x=-22.5+(index%ENEMY_NAV_COLS)*ENEMY_NAV_STEP,z=-28.5+Math.floor(index/ENEMY_NAV_COLS)*ENEMY_NAV_STEP,dx=x-player.x,dz=z-player.z;
-  if(dx*dx+dz*dz<=stopDistance*stopDistance&&visible(V(x,ENEMY_TYPES[kind].baseY,z),player)){distances[index]=0;queue[size++]=index;}
+  const x=-22.5+(index%ENEMY_NAV_COLS)*ENEMY_NAV_STEP,z=-28.5+Math.floor(index/ENEMY_NAV_COLS)*ENEMY_NAV_STEP,dx=x-targetX,dz=z-targetZ;
+  if(dx*dx+dz*dz<=stopDistance*stopDistance&&visible(V(x,ENEMY_TYPES[kind].baseY,z),target)){distances[index]=0;queue[size++]=index;}
  }
  if(!size){
   let nearest=-1,nearestDistance=Infinity;
   for(let index=0;index<grid.open.length;index++)if(grid.open[index]){
-   const x=-22.5+(index%ENEMY_NAV_COLS)*ENEMY_NAV_STEP,z=-28.5+Math.floor(index/ENEMY_NAV_COLS)*ENEMY_NAV_STEP,dx=x-player.x,dz=z-player.z,dist=dx*dx+dz*dz;
-   if(dist<nearestDistance&&visible(V(x,ENEMY_TYPES[kind].baseY,z),player)){nearest=index;nearestDistance=dist;}
+   const x=-22.5+(index%ENEMY_NAV_COLS)*ENEMY_NAV_STEP,z=-28.5+Math.floor(index/ENEMY_NAV_COLS)*ENEMY_NAV_STEP,dx=x-targetX,dz=z-targetZ,dist=dx*dx+dz*dz;
+   if(dist<nearestDistance&&visible(V(x,ENEMY_TYPES[kind].baseY,z),target)){nearest=index;nearestDistance=dist;}
   }
   if(nearest>=0){distances[nearest]=0;queue[size++]=nearest;}
  }
@@ -956,8 +1164,8 @@ function enemyNavField(kind,stopDistance){
  }
  return grid;
 }
-function enemyNavWaypoint(enemy,stopDistance){
- const grid=enemyNavField(enemyKind(enemy),stopDistance),col=Math.round((enemy.x+22.5)/ENEMY_NAV_STEP),row=Math.round((enemy.z+28.5)/ENEMY_NAV_STEP);
+function enemyNavWaypoint(enemy,stopDistance,target=player,cacheKey=enemyKind(enemy)){
+ const grid=enemyNavField(enemyKind(enemy),stopDistance,target,cacheKey),col=Math.round((enemy.x+22.5)/ENEMY_NAV_STEP),row=Math.round((enemy.z+28.5)/ENEMY_NAV_STEP);
  let index=-1,best=Infinity;
  for(let ring=0;ring<=3&&index<0;ring++)for(let dr=-ring;dr<=ring;dr++)for(let dc=-ring;dc<=ring;dc++){
   if(ring&&Math.max(Math.abs(dr),Math.abs(dc))!==ring)continue;
@@ -986,9 +1194,9 @@ function enemyNavSeparation(enemy){
  }
  const magnitude=Math.hypot(x,z);if(magnitude>1){x/=magnitude;z/=magnitude;}return {x,z};
 }
-function enemyWalk(enemy,dt,speed,stopDistance){
- const dx=player.x-enemy.x,dz=player.z-enemy.z,dist=Math.hypot(dx,dz);
- const radius=enemySettings(enemy).radius,sight=visible(enemy,player),settled=dist<=stopDistance&&sight,separation=enemyNavSeparation(enemy);
+function enemyWalk(enemy,dt,speed,stopDistance,target=player,cacheKey=enemyKind(enemy)){
+ const dx=target.x-enemy.x,dz=target.z-enemy.z,dist=Math.hypot(dx,dz);
+ const radius=enemySettings(enemy).radius,sight=visible(enemy,target),settled=dist<=stopDistance&&sight,separation=enemyNavSeparation(enemy);
  enemy.walking=false;
  let directionX=dx/(dist||1),directionZ=dz/(dist||1),travel=dt*speed;
  if(settled){
@@ -997,10 +1205,10 @@ function enemyWalk(enemy,dt,speed,stopDistance){
   const inward=Math.max(0,separation.x*directionX+separation.z*directionZ);
   directionX=separation.x-directionX*inward;directionZ=separation.z-directionZ*inward;
   const strength=Math.hypot(directionX,directionZ);if(strength<.035)return;travel*=Math.min(.5,strength);
- }else if(enemyNavSegment(enemy.x,enemy.z,player.x,player.z,radius)){
+ }else if(enemyNavSegment(enemy.x,enemy.z,target.x,target.z,radius)){
   travel=Math.min(travel,Math.max(0,dist-stopDistance));
  }else{
-  const waypoint=enemyNavWaypoint(enemy,stopDistance);if(!waypoint)return;
+  const waypoint=enemyNavWaypoint(enemy,stopDistance,target,cacheKey);if(!waypoint)return;
   directionX=waypoint.x-enemy.x;directionZ=waypoint.z-enemy.z;
   const remaining=Math.hypot(directionX,directionZ);if(remaining<.001)return;travel=Math.min(travel,remaining);
  }
@@ -1032,9 +1240,9 @@ function updateDogAttack(enemy,dt){
   if(enemy.clawPhase==='strike'&&!enemy.strikeDone&&enemy.clawTimer>=DOG_HIT_TIME){
    enemy.strikeDone=true;
    if(dogCanStrike(enemy)){
-    damage(difficulty==='easy'?12:difficulty==='hard'?26:18);
+    const attackScale=enemy.enemyScale||1;damage((difficulty==='easy'?12:difficulty==='hard'?26:18)*attackScale);
     if(state!=='playing')return;
-    applyBleeding();
+    applyBleeding(attackScale);
    }
   }
   if(enemy.clawTimer<duration-1e-8)break;
@@ -1068,10 +1276,11 @@ function milkOrbOrigin(enemy){
  return V(center.x+direction.x*offset,center.y,center.z+direction.z*offset);
 }
 function launchMilkOrb(enemy){
+ if(state!=='playing'||enemy.hp<=0||!enemies.includes(enemy))return;
  const origin=milkOrbOrigin(enemy);if(!origin||!visible(origin,player))return;
  const spread=difficulty==='hard'?.018:.06;let direction=norm(sub(player,origin));
  direction=norm(V(direction.x+rnd(-spread,spread),direction.y+rnd(-spread,spread),direction.z+rnd(-spread,spread)));
- bullets.push({x:origin.x,y:origin.y,z:origin.z,vx:direction.x*MILK_ORB_SPEED,vy:direction.y*MILK_ORB_SPEED,vz:direction.z*MILK_ORB_SPEED,life:3,age:0,phase:enemy.phase||0});
+ bullets.push({x:origin.x,y:origin.y,z:origin.z,vx:direction.x*MILK_ORB_SPEED,vy:direction.y*MILK_ORB_SPEED,vz:direction.z*MILK_ORB_SPEED,life:3,age:0,phase:enemy.phase||0,damageScale:enemy.enemyScale||1});
  if(Math.hypot(player.x-enemy.x,player.z-enemy.z)<12)tone(360,.13,'sine',.020,-170);
 }
 function updateMilkEnemy(enemy,dt){
@@ -1080,20 +1289,24 @@ function updateMilkEnemy(enemy,dt){
  if(enemy.casting){
   enemy.walking=false;enemy.castTimer+=attackDt;
   if(enemy.castPhase==='charge'&&enemy.castTimer>=MILK_CHARGE){
-   enemy.castTimer-=MILK_CHARGE;enemy.castPhase='release';launchMilkOrb(enemy);
+   enemy.castTimer-=MILK_CHARGE;enemy.castPhase='release';enemy.castShots=0;
   }
-  if(enemy.castPhase==='release'&&enemy.castTimer>=MILK_RELEASE){enemy.casting=false;enemy.castPhase='idle';enemy.castTimer=0;enemy.castProgress=0;return;}
-  enemy.castProgress=enemy.castPhase==='charge'?clamp(enemy.castTimer/MILK_CHARGE,0,1):1-clamp(enemy.castTimer/MILK_RELEASE,0,1);return;
+  if(enemy.castPhase==='release'){
+   while((enemy.castShots||0)<MILK_BURST_COUNT&&enemy.castTimer>=(enemy.castShots||0)*MILK_BURST_INTERVAL-1e-9){enemy.castShots=(enemy.castShots||0)+1;launchMilkOrb(enemy);}
+   if(enemy.castTimer>=MILK_BURST_SPAN+MILK_RELEASE-1e-9){enemy.casting=false;enemy.castPhase='idle';enemy.castTimer=0;enemy.castProgress=0;return;}
+  }
+  enemy.castProgress=enemy.castPhase==='charge'?clamp(enemy.castTimer/MILK_CHARGE,0,1):1-clamp(enemy.castTimer/(MILK_BURST_SPAN+MILK_RELEASE),0,1);return;
  }
  enemyWalk(enemy,dt,(difficulty==='hard'?1.8:1.15)+wave*.16,5);
  enemy.attack-=attackDt;
  if(enemy.attack<=0&&Math.hypot(player.x-enemy.x,player.z-enemy.z)<30&&visible(enemy,player)){
-  enemy.casting=true;enemy.castPhase='charge';enemy.castTimer=0;enemy.castProgress=0;enemy.walking=false;
+  enemy.casting=true;enemy.castPhase='charge';enemy.castTimer=0;enemy.castProgress=0;enemy.castShots=0;enemy.walking=false;
   // Speed up the complete firing cycle while preserving the visible cast animation.
   const baseCooldown=(difficulty==='hard'?1.25:difficulty==='easy'?2.8:2.05)+rnd(0,.7);
-  enemy.attack=(baseCooldown+MILK_CHARGE+MILK_RELEASE)/MILK_ATTACK_RATE-MILK_CHARGE-MILK_RELEASE;
+  enemy.attack=(baseCooldown+MILK_CHARGE+MILK_RELEASE)/MILK_ATTACK_RATE-MILK_CHARGE-MILK_RELEASE-MILK_BURST_SPAN;
  }
 }
+function cancelMilkBursts(){for(const enemy of enemies)if(enemyKind(enemy)==='milk'&&enemy.casting){enemy.casting=false;enemy.castPhase='idle';enemy.castTimer=0;enemy.castProgress=0;enemy.castShots=0;}}
 function updateEnemies(dt){
  for(const enemy of enemies){
   const settings=enemySettings(enemy);
@@ -1108,10 +1321,10 @@ function updateEnemies(dt){
   if(kind==='dog')updateDogEnemy(enemy,dt);else if(kind==='witch')updateWitchEnemy(enemy,dt);else updateMilkEnemy(enemy,dt);
   if(state!=='playing')return;
  }
- updateWitchSupport(dt);refreshEnemySupport();
+ refreshEnemySupport();
 }
 
-function update(dt){if(state!=='playing')return;if(!touchDevice()&&document.pointerLockElement!==canvas){pause();return;}elapsed+=dt;updateBleeding();if(state!=='playing'){updateHUD();return;}updateAKTracers(dt);if(recoilShot&&elapsed-recoilLastShot>=AK_RECOIL_RESET_DELAY)resetAKRecoil();updateWeaponState(dt);cooldown=Math.max(0,cooldown-dt);shotFlash=Math.max(0,shotFlash-dt);hitFlash=Math.max(0,hitFlash-dt);headshotTimer=Math.max(0,headshotTimer-dt);damageFlash=Math.max(0,damageFlash-dt);kick*=Math.exp(-dt*14);noticeTimer-=dt;if(noticeTimer<0)$('notice').classList.remove('visible');
+function update(dt){if(state!=='playing')return;if(!touchDevice()&&document.pointerLockElement!==canvas){pause();return;}elapsed+=dt;updateBleeding();if(state!=='playing'){updateHUD();return;}updateAKTracers(dt);if(recoilShot&&elapsed-recoilLastShot>=AK_RECOIL_RESET_DELAY)resetAKRecoil();updateWeaponState(dt);if(state!=='playing'){updateHUD();return;}cooldown=Math.max(0,cooldown-dt);shotFlash=Math.max(0,shotFlash-dt);hitFlash=Math.max(0,hitFlash-dt);headshotTimer=Math.max(0,headshotTimer-dt);damageFlash=Math.max(0,damageFlash-dt);kick*=Math.exp(-dt*14);noticeTimer-=dt;if(noticeTimer<0)$('notice').classList.remove('visible');
  if(reload>0){reload-=dt;if(reload<=0){let n=Math.min(30-ammo,reserve);ammo+=n;reserve-=n;tone(560,.07,'square',.025,-200);}}
  if(keys.ArrowLeft)player.yaw-=dt*1.8;if(keys.ArrowRight)player.yaw+=dt*1.8;if(keys.ArrowUp)player.pitch=clamp(player.pitch+dt*1.4,-1.05,1.05);if(keys.ArrowDown)player.pitch=clamp(player.pitch-dt*1.4,-1.05,1.05);
  player.crouching=!!(keys.ShiftLeft||keys.ShiftRight);const targetEyeHeight=player.crouching?CROUCHING_EYE_HEIGHT:STANDING_EYE_HEIGHT;
@@ -1119,13 +1332,14 @@ function update(dt){if(state!=='playing')return;if(!touchDevice()&&document.poin
  const forward=Number(!!keys.KeyW)-Number(!!keys.KeyS)-touchMove.z,strafe=Number(!!keys.KeyD)-Number(!!keys.KeyA)+touchMove.x;
  movePlayer(dt,forward,strafe);
  // Keep jump and floor collision independent of the changing camera height.
- player.vy-=dt*13;player.feetY+=player.vy*dt;if(player.feetY<=0){player.feetY=0;player.vy=0;player.ground=true;}player.y=player.feetY+player.eyeHeight;if(fire)shoot();updateAKViewRecoil(dt);
+ player.vy-=dt*13;player.feetY+=player.vy*dt;if(player.feetY<=0){player.feetY=0;player.vy=0;player.ground=true;}player.y=player.feetY+player.eyeHeight;if(fire)shoot();if(state!=='playing'){updateHUD();return;}updateAKViewRecoil(dt);
  updateEnemies(dt);if(state!=='playing'){updateHUD();return;}
- for(let i=bullets.length-1;i>=0;i--){let b=bullets[i],old=V(b.x,b.y,b.z);b.x+=b.vx*dt;b.y+=b.vy*dt;b.z+=b.vz*dt;b.life-=dt;b.age=(b.age||0)+dt;let delta=sub(b,old),step=length(delta),direction=norm(delta),wallHit=wallDistance(old,direction),hitWall=wallHit<=step;let playerCenter=V(player.x,player.y-.3,player.z),oc=sub(old,playerCenter),projection=dot(oc,direction),disc=projection*projection-dot(oc,oc)+.55*.55;let contact=disc>=0?Math.max(0,-projection-Math.sqrt(disc)):Infinity;let intersects=disc>=0&&(-projection+Math.sqrt(disc))>=0;if(intersects&&contact<=step&&contact<wallHit){damage(difficulty==='easy'?6:difficulty==='hard'?14:9);bullets.splice(i,1);if(state!=='playing')break;}else if(b.life<=0||hitWall){if(hitWall)burst(old.x+direction.x*wallHit,old.y+direction.y*wallHit,old.z+direction.z*wallHit,[1,.75,.28],5);bullets.splice(i,1);}}
+ updateWitchPotions(dt);if(state!=='playing'){updateHUD();return;}
+ for(let i=bullets.length-1;i>=0;i--){let b=bullets[i],old=V(b.x,b.y,b.z);b.x+=b.vx*dt;b.y+=b.vy*dt;b.z+=b.vz*dt;b.life-=dt;b.age=(b.age||0)+dt;let delta=sub(b,old),step=length(delta),direction=norm(delta),wallHit=wallDistance(old,direction),hitWall=wallHit<=step;let playerCenter=V(player.x,player.y-.3,player.z),oc=sub(old,playerCenter),projection=dot(oc,direction),disc=projection*projection-dot(oc,oc)+.55*.55;let contact=disc>=0?Math.max(0,-projection-Math.sqrt(disc)):Infinity;let intersects=disc>=0&&(-projection+Math.sqrt(disc))>=0;if(intersects&&contact<=step&&contact<wallHit){damage((difficulty==='easy'?6:difficulty==='hard'?14:9)*(b.damageScale??1));bullets.splice(i,1);if(state!=='playing')break;}else if(b.life<=0||hitWall){if(hitWall)burst(old.x+direction.x*wallHit,old.y+direction.y*wallHit,old.z+direction.z*wallHit,[1,.75,.28],5);bullets.splice(i,1);}}
  if(state!=='playing'){updateHUD();return;}
  for(let i=particles.length-1;i>=0;i--){let p=particles[i];p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.vy-=dt*7;if(p.life<=0)particles.splice(i,1);}
- for(let i=pickups.length-1;i>=0;i--){let p=pickups[i];p.phase+=dt;if(Math.hypot(player.x-p.x,player.z-p.z)<1.7){const heal=p.health||25,rounds=p.ammo||30;player.hp=Math.min(100,player.hp+heal);reserve+=rounds;pickups.splice(i,1);showNotice(`补给已拾取 · 生命 +${heal} / 弹药 +${rounds}`,2);tone(700,.2,'sine',.04,350);}}
- if(enemies.length===0&&state==='playing'){if(!transition){transition=3.5;showNotice(wave===3?'区域已清空 · 正在确认任务':'波次完成 · 下一波即将抵达',3.5);bullets=[];}transition-=dt;if(transition<=0){transition=0;if(wave===3){score+=Math.ceil(player.hp)*5;end(true);}else{wave++;player.hp=Math.min(100,player.hp+30);reserve+=60;ammo=30;reload=0;resetAKRecoil();spawnWave();}}}updateHUD();
+ for(let i=pickups.length-1;i>=0;i--){let p=pickups[i];p.phase+=dt;if(Math.hypot(player.x-p.x,player.z-p.z)<1.7){const heal=p.health||25,rounds=p.ammo||30;player.hp=Math.min(getMaxHealth(),player.hp+heal);reserve+=rounds;pickups.splice(i,1);showNotice(`补给已拾取 · 生命 +${heal} / 弹药 +${rounds}`,2);tone(700,.2,'sine',.04,350);}}
+ updateWitchRevival(dt);updateEndlessSpawns(dt);updateHUD();
 }
 /* Warm, pear-shaped milk character matched to the supplied four views.
  * Local +Z is the face. Enemy base Y=1.15, feet=0, head=2.23.
@@ -1712,7 +1926,7 @@ function gunGeometry(){
 
 function akUpdateModel(presentation=0){
   let rx=.32+Math.sin(bob)*.009*moveAmount,ry=-.30-Math.abs(Math.cos(bob))*.009*moveAmount,rz=-.74+kick;
-  const reloadDip=reload>0?Math.sin(reload/1.65*Math.PI):0;
+  const reloadDip=reload>0?Math.sin(reload/getReloadDuration()*Math.PI):0;
   rx+=reloadDip*.13+presentation*.12;ry+=akViewRecoilPitch*.20-reloadDip*.38-presentation*.90;rz+=presentation*.22;
   const yaw=.09+presentation*.42,cy=Math.cos(yaw),sy=Math.sin(yaw),roll=-.035-reloadDip*.19+presentation*.70,cr=Math.cos(roll),sr=Math.sin(roll),m=akViewMatrix;
   // Visual recoil follows the spray height with a small per-shot lift. Aim stays untouched.
@@ -1985,16 +2199,242 @@ function prepareWitchModel(){
  if(witchGpuModel)return;const data=witchBuildGeometry();
  witchGpuModel={core:mesh(data.core),arms:data.arms.map(part=>mesh(part)),legs:data.legs.map(part=>mesh(part))};
 }
+// Witch potion presentation only. Two palettes of four immutable meshes are
+// shared by all effects; kind='heal' is green, kind='damage'/missing is purple.
+// Requires box, milkLimb, milkEllipsoid, mesh, draw; witch pose also uses the
+// existing prepareWitchModel, witchSetMatrix, witchModelMatrix and witchGpuModel.
+// p.age/s.age count upwards; life is the total lifetime (.65 for a splash).
+// No health, collision, random number generator, or projectile state is modified.
+let witchPotionGeometryCache=null,witchPotionGpu=null;
+const witchPotionMatrix=new Float32Array(16);
+
+function witchPotionTriangle(out,a,b,c,color,emission=0){
+ const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+ const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,n=Math.hypot(nx,ny,nz);
+ if(n<1e-10)return;
+ for(const p of [a,b,c])out.push(p[0],p[1],p[2],nx/n,ny/n,nz/n,...color,emission);
+}
+function witchPotionQuad(out,a,b,c,d,color,emission=0){
+ witchPotionTriangle(out,a,b,c,color,emission);witchPotionTriangle(out,a,c,d,color,emission);
+}
+function witchPotionEmission(out,from,value){for(let i=from+9;i<out.length;i+=10)out[i]=value;}
+function witchPotionBuildGeometry(){
+ if(witchPotionGeometryCache)return witchPotionGeometryCache;
+ const bottle=[],boundary=[],shards=[],mist=[];
+ // Faceted coloured glass: a violet liquid body, pale green glass shoulder,
+ // narrow neck, real cork and sparse highlight strips. All are opaque surfaces
+ // because the game shader has no alpha; this avoids sorting/transparency cost.
+ const profile=[[-.175,.060],[-.140,.118],[.035,.118],[.112,.062],[.180,.047]];
+ for(let row=0;row<profile.length-1;row++)for(let i=0;i<8;i++){
+  const a=i*Math.PI/4,b=(i+1)*Math.PI/4,lo=profile[row],hi=profile[row+1];
+  const color=row<2?(i%2?[.57,.17,.79]:[.71,.26,.87]):[.39,.66,.55];
+  witchPotionQuad(bottle,[Math.sin(a)*lo[1],lo[0],Math.cos(a)*lo[1]],[Math.sin(b)*lo[1],lo[0],Math.cos(b)*lo[1]],
+   [Math.sin(b)*hi[1],hi[0],Math.cos(b)*hi[1]],[Math.sin(a)*hi[1],hi[0],Math.cos(a)*hi[1]],color,row<2?.36:.10);
+ }
+ for(let i=0;i<8;i++){
+  const a=i*Math.PI/4,b=(i+1)*Math.PI/4;
+  witchPotionTriangle(bottle,[0,-.175,0],[Math.sin(b)*.060,-.175,Math.cos(b)*.060],[Math.sin(a)*.060,-.175,Math.cos(a)*.060],[.36,.10,.53],.18);
+ }
+ milkLimb(bottle,[0,.174,0],[0,.225,0],.049,.045,[.47,.32,.17],8);
+ box(bottle,0,.203,.047,.045,.017,.006,[.68,.49,.28]);
+ box(bottle,-.067,-.034,.101,.021,.132,.014,[.80,.95,.86],.30);
+ box(bottle,.034,.027,.119,.055,.020,.010,[.89,.78,1],.46);
+ box(bottle,0,.116,.055,.016,.065,.009,[.78,.92,.78],.22);
+ // A closed purple ring always marks the actual radius; it never grows past
+ // or contracts inside that radius during its lifetime. Small inward markers
+ // make it readable on textured ground without covering the floor with a disk.
+ for(let i=0;i<96;i++){
+  const a=i*Math.PI/48,b=(i+1)*Math.PI/48;
+  witchPotionQuad(boundary,[Math.sin(a)*.980,0,Math.cos(a)*.980],[Math.sin(a),0,Math.cos(a)],
+   [Math.sin(b),0,Math.cos(b)],[Math.sin(b)*.980,0,Math.cos(b)*.980],[.78,.24,.98],.85);
+  if(i%8===0){
+   const mid=(a+b)/2;
+   witchPotionTriangle(boundary,[Math.sin(mid)*.900,.001,Math.cos(mid)*.900],
+    [Math.sin(mid-.026)*.974,.001,Math.cos(mid-.026)*.974],[Math.sin(mid+.026)*.974,.001,Math.cos(mid+.026)*.974],[.68,.22,.92],.72);
+  }
+ }
+ // One shared fragment cluster, expanded/raised through its model transform.
+ // Deterministic placement gives every impact detail without consuming RNG.
+ for(let i=0;i<12;i++){
+  const angle=i*2.399963229728653,r=.24+(i%4)*.14,x=Math.sin(angle)*r,z=Math.cos(angle)*r,y=.20+(i%5)*.17;
+  const color=i%3?[.71,.29,.91]:[.65,.87,.72];
+  witchPotionTriangle(shards,[x-.017,y-.024,z],[x+.023,y-.012,z+.013],[x+.006,y+.031,z-.009],color,.45);
+  // Back face is intentional: small glass shards stay visible from either side.
+  witchPotionTriangle(shards,[x+.006,y+.031,z-.009],[x+.023,y-.012,z+.013],[x-.017,y-.024,z],color,.45);
+  if(i%3===0){const start=shards.length;milkEllipsoid(shards,x*.7,.14,z*.7,.022,.035,.022,[.73,.21,.96],6,3);witchPotionEmission(shards,start,.55);}
+ }
+ // Sparse, low curved wisps instead of a large opaque smoke volume. A splash
+ // remains readable while these short ribbons stay below knee height.
+ for(let w=0;w<8;w++){
+  const startAngle=w*Math.PI/4+.09,rad=.19+(w%3)*.125,height=.26+(w%3)*.06;
+  for(let seg=0;seg<5;seg++){
+   const t0=seg/5,t1=(seg+1)/5,a=startAngle+t0*.63,b=startAngle+t1*.63;
+   const h0=.025+Math.sin(t0*Math.PI)*height,h1=.025+Math.sin(t1*Math.PI)*height;
+   const width=.025*(.5+Math.sin((t0+t1)*Math.PI/2));
+   const p=[Math.sin(a)*rad,h0,Math.cos(a)*rad],q=[Math.sin(b)*rad,h1,Math.cos(b)*rad];
+   witchPotionQuad(mist,[p[0],p[1]-width,p[2]],[q[0],q[1]-width,q[2]],[q[0],q[1]+width,q[2]],[p[0],p[1]+width,p[2]],w%2?[.48,.19,.62]:[.61,.24,.75],.18);
+  }
+ }
+ const damage={bottle:new Float32Array(bottle),boundary:new Float32Array(boundary),shards:new Float32Array(shards),mist:new Float32Array(mist)},heal={};
+ for(const key of ['bottle','boundary','shards','mist']){
+  const data=new Float32Array(damage[key]);
+  for(let i=0;i<data.length;i+=10){
+   const r=data[i+6],g=data[i+7],b=data[i+8];
+   // Keep the cork, green glass and pale reflection strips; recolour only the
+   // purple liquid/effect surfaces. This conversion runs once, never per frame.
+   if(b>.4&&b>g*1.24&&b>r*.95){data[i+6]=.21+.18*r;data[i+7]=.50+.40*r;data[i+8]=.25+.17*b;}
+  }
+  heal[key]=data;
+ }
+ witchPotionGeometryCache={damage,heal};
+ return witchPotionGeometryCache;
+}
+function prepareWitchPotionVisuals(){
+ if(witchPotionGpu)return;
+ const g=witchPotionBuildGeometry();witchPotionGpu={};
+ for(const kind of ['damage']){const v=g[kind];witchPotionGpu[kind]={bottle:mesh(v.bottle),boundary:mesh(v.boundary),shards:mesh(v.shards),mist:mesh(v.mist)};}
+}
+function witchPotionSetMatrix(x,y,z,yaw=0,pitch=0,roll=0,sx=1,sy=1,sz=1){
+ const m=witchPotionMatrix,cy=Math.cos(yaw),sn=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch),cr=Math.cos(roll),sr=Math.sin(roll);
+ m[0]=cy*cr*sx;m[1]=sr*sx;m[2]=-sn*cr*sx;m[3]=0;
+ m[4]=(-cy*sr*cp+sn*sp)*sy;m[5]=cr*cp*sy;m[6]=(sn*sr*cp+cy*sp)*sy;m[7]=0;
+ m[8]=(cy*sr*sp+sn*cp)*sz;m[9]=-cr*sp*sz;m[10]=(-sn*sr*sp+cy*cp)*sz;m[11]=0;
+ m[12]=x;m[13]=y;m[14]=z;m[15]=1;return m;
+}
+function drawWitchPotion(p,vp,eye){
+ if(p.kind==='heal')return;
+ prepareWitchPotionVisuals();
+ const age=Math.max(0,p.age||0),heading=Math.atan2(p.vx||0,p.vz||0),gpu=witchPotionGpu.damage;
+ draw(gpu.bottle,vp,eye,1,witchPotionSetMatrix(p.x,p.y,p.z,heading+age*3.3,age*8.2,.28+age*1.7),0);
+}
+function drawWitchSplash(s,vp,eye){
+ if(s.kind==='heal')return;
+ const life=s.life>0?s.life:.65,t=Math.max(0,(s.age||0)/life);if(t>=1)return;
+ prepareWitchPotionVisuals();
+ const radius=s.radius>0?s.radius:WITCH_POTION_RADIUS,y=(Number.isFinite(s.y)?s.y:0)+.036,angle=s.x*.43+s.z*.31,gpu=witchPotionGpu.damage;
+ // Impacts may strike a wall or airborne target: the danger outline stays on
+ // the arena floor, while the small fragments/mist retain the real impact Y.
+ draw(gpu.boundary,vp,eye,1,witchPotionSetMatrix(s.x,.065,s.z,0,0,0,radius,1,radius),.12*(1-t));
+ if(t<.65){
+  const phase=t/.65,r=radius*(.20+.57*phase),lift=.72*Math.sin(phase*Math.PI),shrink=1-phase*.7;
+  draw(gpu.shards,vp,eye,1,witchPotionSetMatrix(s.x,y+.03,s.z,angle+t*.5,0,0,r*shrink,lift+.035,r*shrink),0);
+ }
+ const envelope=Math.sin(Math.PI*t),width=radius*(.63+.28*t);
+ if(envelope>.01)draw(gpu.mist,vp,eye,1,witchPotionSetMatrix(s.x,y+.012,s.z,angle-t*.38,0,0,width,envelope,width),0);
+}
+function drawWitchPotionCharge(e,vp,eye,armMatrix,progress){
+ if(progress<=.02)return;
+ prepareWitchPotionVisuals();
+ const m=armMatrix,x=m[0]*.165+m[4]*.272+m[8]*.496+m[12],y=m[1]*.165+m[5]*.272+m[9]*.496+m[13],z=m[2]*.165+m[6]*.272+m[10]*.496+m[14];
+ const radius=(.13+.055*progress)*Math.min(1,progress*6),gpu=witchPotionGpu.damage;
+ // One small ring around the held bottle signals its type. Reuse the boundary
+ // mesh rather than split the existing hand model or add a transparent layer.
+ draw(gpu.boundary,vp,eye,1,witchPotionSetMatrix(x,y,z,e.yaw||0,Math.PI/2,0,radius,1,radius),.14*progress);
+}
+
+// Replace the existing drawWitchModel with this function (do not keep two
+// declarations). Idle remains exactly the original healing/walking pose.
+// Throw animation is presentation only: no entity coordinates/hitboxes change.
+// The cached bottle remains part of the folded arm mesh after recovery.
 function drawWitchModel(e,vp,eye){
  prepareWitchModel();
  const clock=typeof time==='number'?time:0,step=e.walking?Math.sin(clock*4+(e.phase||0))*.045:0;
  const raw=Math.max(0,Math.min(1,Number.isFinite(e.supportPulse)?e.supportPulse:0)),pulse=raw*raw*(3-2*raw),lift=Math.abs(step)*.18,flash=e.flash>0?.64:0;
+ let leftPitch=-.82*pulse,leftRoll=-.06*pulse,rightPitch=-.20*pulse,rightRoll=.15*pulse,armLift=.025*pulse;
+ const p=Math.max(0,Math.min(1,Number.isFinite(e.potionProgress)?e.potionProgress:0));
+ if(e.potionPhase==='windup'){
+  const u=p*p*(3-2*p);
+  leftPitch+=(-1.05-leftPitch)*u;leftRoll+=(1.30-leftRoll)*u;
+  rightPitch+=(-.38-rightPitch)*u;rightRoll+=(-.10-rightRoll)*u;armLift+=(.065-armLift)*u;
+ }else if(e.potionPhase==='recover'){
+  // Start at the raised release pose, snap forward, then return smoothly.
+  const recovery=1-p,split=.32,u=recovery<split?recovery/split:(recovery-split)/(1-split),v=u*u*(3-2*u);
+  if(recovery<split){leftPitch=-1.05+.78*v;leftRoll=1.30-1.41*v;rightPitch=-.38;rightRoll=-.10;armLift=.065-.03*v;}
+  else{leftPitch=-.27+(leftPitch+.27)*v;leftRoll=-.11+(leftRoll+.11)*v;rightPitch=-.38+(rightPitch+.38)*v;rightRoll=-.10+(rightRoll+.10)*v;armLift=.035+(armLift-.035)*v;}
+ }
  draw(witchGpuModel.core,vp,eye,1,witchSetMatrix(witchModelMatrix,e,0,0,0,0,0,lift),flash);
- draw(witchGpuModel.arms[0],vp,eye,1,witchSetMatrix(witchModelMatrix,e,-.82*pulse,-.06*pulse,-.375,.395,.025,lift+.025*pulse),flash);
- draw(witchGpuModel.arms[1],vp,eye,1,witchSetMatrix(witchModelMatrix,e,-.20*pulse,.15*pulse,.375,.395,.025,lift),flash);
+ draw(witchGpuModel.arms[0],vp,eye,1,witchSetMatrix(witchModelMatrix,e,leftPitch,leftRoll,-.375,.395,.025,lift+armLift),flash);
+ draw(witchGpuModel.arms[1],vp,eye,1,witchSetMatrix(witchModelMatrix,e,rightPitch,rightRoll,.375,.395,.025,lift),flash);
  draw(witchGpuModel.legs[0],vp,eye,1,witchSetMatrix(witchModelMatrix,e,0,0,0,0,0,Math.max(0,step)*.65,step),flash);
  draw(witchGpuModel.legs[1],vp,eye,1,witchSetMatrix(witchModelMatrix,e,0,0,0,0,0,Math.max(0,-step)*.65,-step),flash);
+ if(e.potionPhase==='windup')drawWitchPotionCharge(e,vp,eye,witchSetMatrix(witchModelMatrix,e,leftPitch,leftRoll,-.375,.395,.025,lift+armLift),p);
 }
+
+
+// Revival presentation only. effect.y is the ground/feet position (normally 0).
+// age counts up; life is the total duration (1.2 seconds). No corpse, HP, RNG,
+// collision or enemy-model state is modified. Three immutable meshes are shared.
+// Requires mesh/draw only; positions/normals/RGB/emission use the game layout.
+let witchRevivalGeometryCache=null,witchRevivalGpu=null;
+const witchRevivalMatrix=new Float32Array(16);
+function witchRevivalTriangle(out,a,b,c,color,emission=.8){
+ const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];
+ const nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,len=Math.hypot(nx,ny,nz);
+ if(len<1e-10)return;
+ for(const p of [a,b,c])out.push(p[0],p[1],p[2],nx/len,ny/len,nz/len,...color,emission);
+}
+function witchRevivalQuad(out,a,b,c,d,color,emission=.8){
+ witchRevivalTriangle(out,a,b,c,color,emission);witchRevivalTriangle(out,a,c,d,color,emission);
+}
+function witchRevivalBuildGeometry(){
+ if(witchRevivalGeometryCache)return witchRevivalGeometryCache;
+ const rune=[],frame=[],shards=[],cyan=[.23,.92,.72],pale=[.64,1,.83],dark=[.15,.60,.49];
+ const ringPoint=(angle,r,y=0)=>[Math.sin(angle)*r,y,Math.cos(angle)*r];
+ for(let i=0;i<64;i++){
+  const a=i*Math.PI/32,b=(i+1)*Math.PI/32;
+  // Eight broken arcs and a smaller inner trace read as a ritual, rather than
+  // the uninterrupted purple hazard boundary used by damage potions.
+  if(i%8<6)witchRevivalQuad(rune,ringPoint(a,.959),ringPoint(a,1),ringPoint(b,1),ringPoint(b,.959),cyan);
+  if(i%8<3)witchRevivalQuad(rune,ringPoint(a,.715),ringPoint(a,.738),ringPoint(b,.738),ringPoint(b,.715),dark,.45);
+ }
+ // Radial diamond glyphs occupy the gaps between the arcs.
+ for(let i=0;i<8;i++){
+  const a=(i+.84)*Math.PI/4;
+  witchRevivalQuad(rune,ringPoint(a,.80),ringPoint(a-.047,.88),ringPoint(a,.96),ringPoint(a+.047,.88),pale,.9);
+ }
+ // Six discontinuous, thin uprights suggest an open light column. There are
+ // no solid walls or billboards to hide the revived character/player aim.
+ for(let i=0;i<6;i++){
+  const a=i*Math.PI/3,r=.78,x=Math.sin(a)*r,z=Math.cos(a)*r,dx=Math.cos(a)*.014,dz=-Math.sin(a)*.014;
+  for(const [bottom,top]of [[0,.20],[.28,.61],[.69,1]])witchRevivalQuad(frame,[x-dx,bottom,z-dz],[x+dx,bottom,z+dz],[x+dx,top,z+dz],[x-dx,top,z-dz],i%2?cyan:dark,.55);
+ }
+ // Low-poly floating light fragments, deterministic and shared by all spawns.
+ for(let i=0;i<12;i++){
+  const a=i*2.399963229728653,r=.27+(i%4)*.16,x=Math.sin(a)*r,z=Math.cos(a)*r,y=.08+(i%5)*.18,w=.036,h=.069;
+  const top=[x,y+h,z],bottom=[x,y-h,z],left=[x-w,y,z],right=[x+w,y,z],front=[x,y,z+w],back=[x,y,z-w],color=i%3?cyan:pale;
+  for(const [p,q]of [[left,front],[front,right],[right,back],[back,left]]){
+   witchRevivalTriangle(shards,top,p,q,color,.8);witchRevivalTriangle(shards,bottom,q,p,color,.8);
+  }
+ }
+ witchRevivalGeometryCache={rune:new Float32Array(rune),frame:new Float32Array(frame),shards:new Float32Array(shards)};
+ return witchRevivalGeometryCache;
+}
+function prepareWitchRevival(){
+ if(witchRevivalGpu)return;
+ const g=witchRevivalBuildGeometry();witchRevivalGpu={rune:mesh(g.rune),frame:mesh(g.frame),shards:mesh(g.shards)};
+}
+function witchRevivalSetMatrix(x,y,z,yaw,sx,sy,sz){
+ const m=witchRevivalMatrix,c=Math.cos(yaw),s=Math.sin(yaw);
+ m[0]=c*sx;m[1]=0;m[2]=-s*sx;m[3]=0;m[4]=0;m[5]=sy;m[6]=0;m[7]=0;
+ m[8]=s*sz;m[9]=0;m[10]=c*sz;m[11]=0;m[12]=x;m[13]=y;m[14]=z;m[15]=1;return m;
+}
+function drawWitchRevival(effect,vp,eye){
+ const life=effect.life>0?effect.life:1.2,t=Math.max(0,(effect.age||0)/life);if(t>=1)return;
+ const rise=Math.min(1,t/.12),birth=rise*rise*(3-2*rise),end=Math.max(0,(t-.60)/.40),fade=1-end*end*(3-2*end);
+ if(birth*fade<.002)return;
+ prepareWitchRevival();
+ const radius=effect.radius>0?effect.radius:1,y=(Number.isFinite(effect.y)?effect.y:0)+.045;
+ const height=effect.type==='dog'?1.25:effect.type==='witch'?2.0:1.8,angle=effect.x*.41+effect.z*.27;
+ const ground=radius*(.74+.26*birth)*fade;
+ draw(witchRevivalGpu.rune,vp,eye,1,witchRevivalSetMatrix(effect.x,y,effect.z,angle-t*.38,ground,1,ground),.14*fade);
+ const halo=radius*(.70+.10*Math.sin(t*Math.PI))*birth*fade;
+ draw(witchRevivalGpu.rune,vp,eye,1,witchRevivalSetMatrix(effect.x,y+height*(.07+.82*t),effect.z,angle+t*.85,halo,1,halo),.24*fade);
+ const width=radius*.83*birth*fade;
+ draw(witchRevivalGpu.frame,vp,eye,1,witchRevivalSetMatrix(effect.x,y+height*(1-fade)*.5,effect.z,angle,width,height*birth*fade,width),0);
+ const spread=radius*(.64+.22*t)*birth*fade;
+ draw(witchRevivalGpu.shards,vp,eye,1,witchRevivalSetMatrix(effect.x,y+height*(.11+.32*t),effect.z,angle+t*.42,spread,height*.62*fade,spread),.10*fade);
+}
+
 
 // Two shared immutable rings; no per-frame mesh uploads for support auras.
 let witchSupportGpu=null;
@@ -2021,12 +2461,7 @@ function drawWitchSupportEffects(enemy,vp,eye){
  prepareWitchSupportEffects();
  if(kind==='witch')draw(witchSupportGpu.boundary,vp,eye,1,witchAuraMatrix(enemy.x,.065,enemy.z,WITCH_SUPPORT_RADIUS),pulse*.16);
  if(enemy.supported)draw(witchSupportGpu.buff,vp,eye,1,witchAuraMatrix(enemy.x,.075,enemy.z,enemySettings(enemy).radius+.13),pulse*.28);
- if(pulse>0){
-  const height=kind==='dog'?.65:kind==='witch'?1.9:1.45;
-  const y=enemy.y+height+(1-pulse)*.25,size=.25*Math.min(1,pulse*3),facing=Math.atan2(eye.x-enemy.x,eye.z-enemy.z);
-  box(effectData,enemy.x,y,enemy.z,size,.065*Math.min(1,pulse*3),.022,[.40,1,.58],1,facing);
-  box(effectData,enemy.x,y,enemy.z,.065*Math.min(1,pulse*3),size,.024,[.40,1,.58],1,facing);
- }
+
 }
 
 let milkOrbGpu=null;
@@ -2116,6 +2551,9 @@ function render(){resize();updateCrosshair();const w=canvas.width,h=canvas.heigh
  }else{
   for(const e of enemies){const kind=enemyKind(e);if(kind==='dog')drawDogModel(e,vp,eye);else if(kind==='witch')drawWitchModel(e,vp,eye);else drawMilkModel(e,vp,eye);drawEnemyEffects(e,vp,eye);}
   for(const b of bullets){drawMilkOrb(b.x,b.y,b.z,vp,eye,b.phase||0);appendOrbTrail(b,effectData,eye);}
+  for(const p of witchPotions)if(p.kind!=='heal')drawWitchPotion(p,vp,eye);
+  for(const s of witchSplashes)if(s.kind!=='heal')drawWitchSplash(s,vp,eye);
+  for(const e of revivalEffects)drawWitchRevival(e,vp,eye);
   for(const p of particles)box(effectData,p.x,p.y,p.z,.07,.07,.07,p.c,1);
   for(const p of pickups)drawEnemyPickup(p,effectData);
  }
@@ -2132,10 +2570,12 @@ document.addEventListener('wheel',event=>{
 function look(dx,dy,touch=false){if(state!=='playing')return;const speed=.0024*(touch?1:sensitivity);player.yaw+=dx*speed;player.pitch=clamp(player.pitch-dy*speed,-1.1,1.1);}
 
 function backToMapMenu(){
- state='menu';clearBleeding();cancelLock();clearTouchInput();document.exitPointerLock?.();
+ resetRunProgress();
+ state='menu';clearBleeding();clearWitchPotions();clearEnemyRevival();resetEnemyNavigation();spawnTimer=0;spawned=0;nextEnemyId=0;cancelLock();clearTouchInput();document.exitPointerLock?.();
  akTracers.length=0;enemies=[];bullets=[];particles=[];pickups=[];fire=false;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;headshotTimer=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;weaponSwitch=null;queuedWeapon=null;activeWeapon='ak';player=null;
  document.body.classList.remove('playing');$('hud').classList.add('hidden');$('pauseMenu').classList.add('hidden');$('endMenu').classList.add('hidden');$('notice').classList.remove('visible');$('reloadBar').classList.add('hidden');$('menu').classList.remove('hidden');
 }
+for(let i=0;i<3;i++)$('upgradeChoice'+i).addEventListener('click',()=>chooseLevelUpgrade(i));
 $('mapSelect').addEventListener('change',()=>{if(state!=='menu'||pendingLock){$('mapSelect').value=currentMap.id;return;}activateMap($('mapSelect').value);});
 $('pauseMapBtn').addEventListener('click',backToMapMenu);$('endMapBtn').addEventListener('click',backToMapMenu);
 $('startBtn').addEventListener('click',startFromGesture);$('againBtn').addEventListener('click',startFromGesture);$('restartBtn').addEventListener('click',startFromGesture);$('resumeBtn').addEventListener('click',resumeFromGesture);$('pauseBtn').addEventListener('click',pause);
@@ -2163,7 +2603,7 @@ document.addEventListener('mousemove',event=>handleMouseLook(event),{passive:tru
 canvas.addEventListener('mousedown',e=>{if(state!=='playing')return;if(e.button===0)startFiring();if(e.button===2)e.preventDefault();});
 document.addEventListener('mouseup',e=>{if(e.button===0)stopFiring();});
 document.addEventListener('contextmenu',e=>{if(state==='playing')e.preventDefault();});
-document.addEventListener('keydown',e=>{if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target?.tagName))return;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Escape','ShiftLeft','ShiftRight'].includes(e.code)&&state==='playing')e.preventDefault();if(e.repeat&&['Escape','KeyP','KeyR','Digit1','Digit3','KeyQ'].includes(e.code))return;if(e.code==='Escape'){if(pendingLock)cancelLock();if(state==='playing')pause();return;}if(e.code==='KeyP'){if(state==='playing')pause();else if(state==='paused')resume();return;}if(state!=='playing')return;keys[e.code]=true;if(!e.ctrlKey&&!e.metaKey&&!e.altKey){if(e.code==='Digit1')requestWeapon('ak');if(e.code==='Digit3')requestWeapon('knife');if(e.code==='KeyQ')quickSwitchWeapon();}if(e.code==='KeyR')reloadGun();if(e.code==='Space')jump();if(e.code==='KeyF')startFiring();});
+document.addEventListener('keydown',e=>{if(state==='upgrading'){if(/^Digit[1-3]$/.test(e.code)){e.preventDefault();if(!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey)chooseLevelUpgrade(Number(e.code.slice(-1))-1);}return;}if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target?.tagName))return;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Escape','ShiftLeft','ShiftRight'].includes(e.code)&&state==='playing')e.preventDefault();if(e.repeat&&['Escape','KeyP','KeyR','Digit1','Digit3','KeyQ'].includes(e.code))return;if(e.code==='Escape'){if(pendingLock)cancelLock();if(state==='playing')pause();return;}if(e.code==='KeyP'){if(state==='playing')pause();else if(state==='paused')resume();return;}if(state!=='playing')return;keys[e.code]=true;if(!e.ctrlKey&&!e.metaKey&&!e.altKey){if(e.code==='Digit1')requestWeapon('ak');if(e.code==='Digit3')requestWeapon('knife');if(e.code==='KeyQ')quickSwitchWeapon();}if(e.code==='KeyR')reloadGun();if(e.code==='Space')jump();if(e.code==='KeyF')startFiring();});
 document.addEventListener('keyup',e=>{keys[e.code]=false;if(e.code==='KeyF')stopFiring();});
 window.addEventListener('blur',()=>{clearTouchInput();if(state==='playing')pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTouchInput();if(state==='playing')pause();}});
 const joystick=$('joystick');function joy(e){const r=joystick.getBoundingClientRect(),radius=Math.max(1,(r.width-$('stick').getBoundingClientRect().width)/2-6),sx=e.clientX-r.left-r.width/2,sy=e.clientY-r.top-r.height/2,rotated=isMobilePortrait(),dx=rotated?sy:sx,dy=rotated?-sx:sy,n=Math.hypot(dx,dy),factor=Math.min(1,radius/(n||1));touchMove.x=dx*factor/radius;touchMove.z=dy*factor/radius;$('stick').style.transform=`translate(${dx*factor}px,${dy*factor}px)`;}
@@ -2176,16 +2616,16 @@ window.screen?.orientation?.addEventListener?.('change',syncMobileOrientation);
 matchMedia('(pointer:coarse)').addEventListener?.('change',syncMobileOrientation);
 syncMobileOrientation();
 // Read-only diagnostics for validating the playable state.
-window.gameStatus=()=>({state,map:currentMap.id,mapName:currentMap.name,wave,health:player?.hp,bleeding:bleedRemaining()>0,bleedRemaining:bleedRemaining(),ammo,reserve,enemies:enemies.length,enemyTypes:{milk:enemies.filter(e=>enemyKind(e)==='milk').length,dog:enemies.filter(e=>enemyKind(e)==='dog').length,witch:enemies.filter(e=>enemyKind(e)==='witch').length},score,kills,shots,hits,headshots,headshotKills,elapsed,weapon:activeWeapon,previousWeapon,switchingWeapon:!!weaponSwitch,weaponSwitchProgress:weaponSwitch?weaponSwitch.elapsed/WEAPON_SWITCH_DURATION:0,knifeAttackProgress:knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0,knifeSwings,knifeHits,recoilShot,lastRecoilDegrees:{yaw:lastRecoilYaw*180/Math.PI,pitch:lastRecoilPitch*180/Math.PI},recoilOffsetDegrees:{yaw:recoilYaw*180/Math.PI,pitch:recoilPitch*180/Math.PI},horizontalSpeed:player?.horizontalSpeed||0,accuracyThreshold:ACCURACY_SPEED_THRESHOLD,spreadDegrees:getShotSpread()*180/Math.PI,accurate:!!player&&getShotSpread()===0,crouching:player?.crouching||false,height:player?.eyeHeight,position:player?{x:player.x,y:player.y,z:player.z}:null,webgl:!!gl});
+window.gameStatus=()=>({state,mode:'endless',level:runProgress.level,xp:runProgress.xp,xpNext:nextLevelXP(),maxHealth:getMaxHealth(),bulletDamage:getBulletDamage(),damageBonus:runProgress.damageBonus,reloadSpeedBonus:runProgress.reloadRanks*.1,bulletHealPercent:runProgress.leechLevel*30,enemyScaling:getEnemyScaling(),upgradeChoices:runProgress.choices.slice(),survivalTime:elapsed,spawnInterval:getSpawnInterval(),spawned,map:currentMap.id,mapName:currentMap.name,wave,health:player?.hp,bleeding:bleedRemaining()>0,bleedRemaining:bleedRemaining(),ammo,reserve,enemies:enemies.length,witchPotions:witchPotions.length,witchSplashes:witchSplashes.length,enemyTypes:{milk:enemies.filter(e=>enemyKind(e)==='milk').length,dog:enemies.filter(e=>enemyKind(e)==='dog').length,witch:enemies.filter(e=>enemyKind(e)==='witch').length},score,kills,shots,hits,headshots,headshotKills,elapsed,weapon:activeWeapon,previousWeapon,switchingWeapon:!!weaponSwitch,weaponSwitchProgress:weaponSwitch?weaponSwitch.elapsed/WEAPON_SWITCH_DURATION:0,knifeAttackProgress:knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0,knifeSwings,knifeHits,recoilShot,lastRecoilDegrees:{yaw:lastRecoilYaw*180/Math.PI,pitch:lastRecoilPitch*180/Math.PI},recoilOffsetDegrees:{yaw:recoilYaw*180/Math.PI,pitch:recoilPitch*180/Math.PI},horizontalSpeed:player?.horizontalSpeed||0,accuracyThreshold:ACCURACY_SPEED_THRESHOLD,spreadDegrees:getShotSpread()*180/Math.PI,accurate:!!player&&getShotSpread()===0,crouching:player?.crouching||false,height:player?.eyeHeight,position:player?{x:player.x,y:player.y,z:player.z}:null,webgl:!!gl});
 gl.enable(gl.DEPTH_TEST);gl.clearColor(.35,.45,.48,1);
 let fpsStart=null,fpsFrames=0,fpsMode=null;
 function updateFPS(now){
- const mode=state==='playing'?'战斗':state==='paused'?'暂停':'菜单';
+ const mode=state==='playing'?'战斗':state==='paused'?'暂停':state==='upgrading'?'选择强化':'菜单';
  if(document.hidden){fpsStart=null;return;}
  if(fpsStart===null||fpsMode!==mode){fpsStart=now;fpsFrames=0;fpsMode=mode;$('fpsCounter').textContent=`FPS · ${mode} · 测量中`;return;}
  fpsFrames++;const interval=now-fpsStart;
  if(interval>=1000){$('fpsCounter').textContent=`${Math.round(fpsFrames*1000/interval)} FPS · ${mode}`;fpsStart=now;fpsFrames=0;}
 }
 document.addEventListener('visibilitychange',()=>{fpsStart=null;fpsFrames=0;});
-function frame(now){const dt=Math.min((now-last)/1000,.04);last=now;time+=dt;update(dt);render();updateFPS(now);requestAnimationFrame(frame);}requestAnimationFrame(frame);
+function frame(now){const dt=Math.min((now-last)/1000,.04);last=now;if(state!=='upgrading')time+=dt;update(dt);render();updateFPS(now);requestAnimationFrame(frame);}requestAnimationFrame(frame);
 })();
