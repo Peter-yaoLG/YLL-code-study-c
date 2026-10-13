@@ -221,6 +221,10 @@ body.touch-layout.mobile-compact .map-brief #mapDescription{font-size:8px;line-h
 .upgrade-choice:disabled{opacity:.48;cursor:default}
 .upgrade-instructions{display:flex;justify-content:space-between;gap:12px;margin:17px 0 0;font-size:9px;line-height:1.7;letter-spacing:.4px;color:#7f9b8b}
 .upgrade-instructions kbd{font:10px Consolas,monospace;color:#c3d1c7}.upgrade-touch-hint{display:none}
+.upgrade-major-hint{display:none}.major-upgrade .upgrade-major-hint{display:inline}.major-upgrade .upgrade-normal-hint{display:none}
+.major-upgrade .upgrade-choices{grid-template-columns:repeat(3,minmax(0,1fr))}
+.major-upgrade .upgrade-panel{overscroll-behavior:contain;scroll-padding-block:14px}
+.major-upgrade .upgrade-choice{min-height:202px}
 #upgradeMenu:not(.hidden)~#mobileControls{visibility:hidden;pointer-events:none}
 @media(hover:hover){.upgrade-choice:not(:disabled):hover{border-color:var(--upgrade-accent);background:rgba(92,126,68,.20);box-shadow:inset 0 0 0 1px rgba(213,250,82,.10)}}
 body.touch-layout .level-panel{width:158px;margin-top:6px;padding:5px 7px}
@@ -234,6 +238,7 @@ body.touch-layout .upgrade-pause-label{font-size:9px;letter-spacing:.3px}
 body.touch-layout #upgradeSubtitle{font-size:10px;margin:8px 0 13px;line-height:1.5}
 body.touch-layout .upgrade-choices{gap:10px}
 body.touch-layout .upgrade-choice{min-height:156px;padding:12px 13px 10px}
+body.touch-layout .major-upgrade .upgrade-choice{min-height:156px;touch-action:pan-y}
 body.touch-layout .upgrade-choice-top{margin-bottom:10px}body.touch-layout .upgrade-choice-top kbd{width:22px;height:22px;font-size:10px}
 body.touch-layout .upgrade-choice-symbol{font-size:23px}body.touch-layout .upgrade-choice-title{font-size:15px;letter-spacing:.4px}
 body.touch-layout .upgrade-choice-description{font-size:10px;line-height:1.65;margin-top:6px}
@@ -243,7 +248,27 @@ body.touch-layout .upgrade-desktop-hint{display:none}body.touch-layout .upgrade-
 body.touch-layout .result-level{padding-top:8px;font-size:9px}body.touch-layout .result-level strong{font-size:16px}
 body.touch-layout.mobile-compact .upgrade-panel{padding:12px 16px 10px}
 body.touch-layout.mobile-compact .upgrade-choice{min-height:142px;padding:10px 11px}
+body.touch-layout.mobile-compact .major-upgrade .upgrade-choice{min-height:150px}
 body.touch-layout.mobile-compact .upgrade-choice-top{margin-bottom:7px}
 @media(max-width:600px){:where(body:not(.touch-layout)) .upgrade-panel{padding:20px 16px 15px}:where(body:not(.touch-layout)) .upgrade-header{gap:10px}:where(body:not(.touch-layout)) #upgradeTitle{font-size:25px}:where(body:not(.touch-layout)) .upgrade-choices{gap:9px}:where(body:not(.touch-layout)) .upgrade-choice{padding:13px 10px;min-height:220px}:where(body:not(.touch-layout)) .upgrade-choice-title{font-size:15px}:where(body:not(.touch-layout)) .upgrade-choice-description{font-size:10px}:where(body:not(.touch-layout)) .upgrade-instructions{font-size:8px}}
 @media(max-height:540px){:where(body:not(.touch-layout)) .upgrade-panel{max-height:calc(100dvh - 36px);padding-top:18px}:where(body:not(.touch-layout)) .upgrade-choice{min-height:180px}:where(body:not(.touch-layout)) .upgrade-choice-top{margin-bottom:12px}}
+
+/* Freeze feedback stays at the screen edge; the skill never blocks aim or dialogs. */
+#freezeOverlay{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 58%,rgba(111,197,239,.08) 79%,rgba(159,225,252,.23) 100%);box-shadow:inset 0 0 42px rgba(130,218,252,.2),inset 0 0 0 1px rgba(208,246,255,.28);transition:opacity .16s ease-out}
+body.playing #freezeOverlay.active{opacity:1}
+body:not(.playing) #freezeOverlay{display:none}
+#freezeStatus{position:absolute;left:50%;bottom:71px;transform:translateX(-50%);display:flex;align-items:center;gap:9px;min-width:158px;padding:8px 12px;border:1px solid rgba(158,217,239,.28);border-radius:4px;background:rgba(10,24,30,.66);color:#b7e8f7;pointer-events:none}
+#freezeStatus>svg{width:23px;height:23px;flex:none}
+.freeze-key{display:grid;place-items:center;width:23px;height:25px;border:1px solid rgba(187,228,244,.4);font:12px Consolas,monospace;color:#e0f6ff}
+.freeze-label{display:block;font-size:8px;letter-spacing:1px;color:#92bacb}
+#freezeStatusText{display:block;font-size:12px;line-height:1.4;margin-top:2px;font-weight:400;white-space:nowrap}
+#freezeStatus.cooling{color:#829da9;border-color:rgba(157,187,202,.2)}
+#freezeStatus.active{color:#e6fbff;border-color:rgba(176,232,255,.7)}
+#freezeBtn{display:none}
+body.touch-layout #freezeStatus{display:none}
+body.touch-layout #freezeBtn{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;right:calc(28px + var(--safe-right));bottom:calc(86px + var(--safe-bottom));width:56px;height:56px;color:#b9eafd;border-color:rgba(176,229,252,.5);background:rgba(22,46,61,.45)}
+body.touch-layout #freezeBtn svg{width:25px;height:25px;opacity:.8;pointer-events:none}
+body.touch-layout #freezeBtnText{font-size:9px;line-height:1.2;white-space:nowrap;pointer-events:none}
+body.touch-layout #freezeBtn.cooling,body.touch-layout #freezeBtn:disabled{color:#83a2b2;border-color:rgba(164,199,215,.25);background:rgba(17,31,39,.4)}
+body.touch-layout #freezeBtn.active{color:#e6fbff;border-color:rgba(208,247,255,.85);background:rgba(59,111,138,.48)}
 @media(prefers-reduced-motion:reduce){#xpFill,.upgrade-choice{transition:none}}

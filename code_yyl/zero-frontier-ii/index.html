@@ -14,6 +14,7 @@
   <canvas id="weapon" aria-hidden="true"></canvas>
   <div class="screen-vignette" aria-hidden="true"></div>
   <div id="damage" aria-hidden="true"></div>
+  <div id="freezeOverlay" aria-hidden="true"></div>
   <div id="fpsCounter" class="mono" title="最近一秒的实际画面帧率">FPS · 测量中</div>
 
   <main id="menu" class="menu-screen">
@@ -46,9 +47,9 @@
     <aside class="sector-marker" aria-label="战场预览"><span class="marker-bracket"></span><div class="sector-number mono">BATTLEFIELDS <b>04</b></div><p>自由选择战场</p><div class="sector-coordinates mono">4 MAPS / ENDLESS</div><span class="sector-state"><span class="status-dot"></span>敌对信号已确认</span></aside>
 
     <footer class="menu-footer">
-      <div class="control-guide"><span class="guide-title">操作指引</span><span><kbd>W A S D</kbd>移动</span><span><kbd>鼠标</kbd>转动视角 · 左键攻击</span><span title="1 切 AK-47，3 切 M9，Q 切回上一把"><kbd>1 / 3 / Q</kbd>切换武器</span><span><kbd>R</kbd>换弹</span><span><kbd>空格 / 滚轮↓</kbd>跳跃</span><span title="左右 Shift 均可，松开站起"><kbd>Shift</kbd>按住蹲下</span><span><kbd>ESC</kbd>暂停</span></div>
+      <div class="control-guide"><span class="guide-title">操作指引</span><span><kbd>W A S D</kbd>移动</span><span><kbd>鼠标</kbd>转动视角 · 左键攻击</span><span title="1 切 AK-47，3 切 M9"><kbd>1 / 3</kbd>切换武器</span><span><kbd>Q</kbd>全场冰冻</span><span><kbd>R</kbd>换弹</span><span><kbd>空格 / 滚轮↓</kbd>跳跃</span><span title="左右 Shift 均可，松开站起"><kbd>Shift</kbd>按住蹲下</span><span><kbd>ESC</kbd>暂停</span></div>
       <div class="footer-code mono"><span class="status-dot"></span>READY WHEN YOU ARE<span class="barcode" aria-hidden="true"></span></div>
-      <p class="mobile-hint">摇杆移动 · 滑动转向 · 左上射击 · 右侧切换武器</p>
+      <p class="mobile-hint">摇杆移动 · 滑动转向 · 左上射击 · 右侧切换武器 / 冰冻</p>
     </footer>
   </main>
 
@@ -58,11 +59,12 @@
     </div>
     <div class="mission-clock" aria-label="存活时间"><span class="mono">存活时间 / SURVIVAL TIME</span><strong id="timer" class="mono">00:00</strong></div>
     <div id="bleedStatus" class="hidden" role="status" aria-live="polite"></div>
+    <div id="freezeStatus" aria-label="全场冰冻技能状态"><kbd class="freeze-key">Q</kbd><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 3v26M5 9.5l22 13M5 22.5l22-13M12 6l4 4 4-4M12 26l4-4 4 4M6 14l5-1-1-5M22 24l-1-5 5-1M6 18l5 1-1 5M22 8l-1 5 5 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><div><span class="freeze-label">全场冰冻</span><strong id="freezeStatusText" class="mono">就绪</strong></div></div>
     <div class="radar"><div class="radar-heading mono"><span>TACTICAL</span><span>LIVE</span></div><canvas id="minimap" width="160" height="160" aria-label="战术雷达"></canvas><span class="radar-north mono">N</span></div>
     <button id="pauseBtn" class="icon-button hud-pause" title="暂停" aria-label="暂停游戏"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8 5v14M16 5v14" stroke="currentColor" stroke-width="2"/></svg></button>
     <button id="hudFullscreenBtn" class="icon-button fullscreen-button hud-fullscreen" title="按 Esc 暂停后调整全屏与灵敏度" aria-label="按 Esc 暂停后调整全屏与灵敏度"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" stroke="currentColor" stroke-width="1.5"/></svg><span class="fullscreen-label">全屏</span></button>
     <div class="health-panel"><div class="health-symbol" aria-hidden="true">+</div><div class="health-data"><span class="hud-small-label">生命值 <span class="mono">VITALS</span></span><div class="health-numbers"><strong id="health" class="mono">100</strong><span class="mono">/ <span id="maxHealth">100</span></span></div><div class="health-track"><div id="healthFill"></div></div></div></div>
-    <div id="ammoPanel" class="ammo-panel"><div class="weapon-name mono"><span id="weaponName">AK-47</span><span id="weaponKind">自动步枪</span></div><div class="ammo-numbers"><strong id="ammo" class="mono">30</strong><span class="ammo-separator">/</span><span id="reserve" class="mono">180</span></div><div class="ammo-footer"><span class="ammo-rounds"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="weaponAction"><kbd>R</kbd> 换弹</span></div><div class="weapon-switch-hint mono">1 AK · 3 M9 · Q 上一把</div></div>
+    <div id="ammoPanel" class="ammo-panel"><div class="weapon-name mono"><span id="weaponName">AK-47</span><span id="weaponKind">自动步枪</span></div><div class="ammo-numbers"><strong id="ammo" class="mono">30</strong><span class="ammo-separator">/</span><span id="reserve" class="mono">180</span></div><div class="ammo-footer"><span class="ammo-rounds"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span id="weaponAction"><kbd>R</kbd> 换弹</span></div><div class="weapon-switch-hint mono">1 AK · 3 M9 · Q 冰冻</div></div>
     <div class="hud-controls"><span><kbd>WASD</kbd> 移动</span><span><kbd>空格 / 滚轮↓</kbd> 跳跃</span><span title="左右 Shift 均可，松开站起"><kbd>Shift</kbd> 按住蹲下</span><span><kbd>ESC</kbd> 暂停</span></div>
   </section>
   <div id="crosshair" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
@@ -75,12 +77,15 @@
     <div class="upgrade-panel">
       <div class="upgrade-header"><div><div class="eyebrow"><span class="short-rule"></span>FIELD UPGRADE</div><h2 id="upgradeTitle">等级提升</h2></div><span class="upgrade-pause-label"><span class="status-dot"></span>战斗已暂停</span></div>
       <p id="upgradeSubtitle">选择一项强化，继续迎战尸潮。</p>
-      <div id="upgradeChoices" class="upgrade-choices" aria-label="三选一强化">
+      <div id="upgradeChoices" class="upgrade-choices" aria-label="选择一项强化">
         <button id="upgradeChoice0" class="upgrade-choice" type="button" data-choice-index="0" aria-keyshortcuts="1" aria-labelledby="upgradeChoiceTitle0" aria-describedby="upgradeChoiceDescription0"><span class="upgrade-choice-top"><kbd>1</kbd><span class="upgrade-choice-symbol" aria-hidden="true">＋</span></span><strong id="upgradeChoiceTitle0" class="upgrade-choice-title">升级选项一</strong><span id="upgradeChoiceDescription0" class="upgrade-choice-description">查看强化效果，选择适合本局的能力。</span><span class="upgrade-choice-action">选择强化 <span aria-hidden="true">↗</span></span></button>
         <button id="upgradeChoice1" class="upgrade-choice" type="button" data-choice-index="1" aria-keyshortcuts="2" aria-labelledby="upgradeChoiceTitle1" aria-describedby="upgradeChoiceDescription1"><span class="upgrade-choice-top"><kbd>2</kbd><span class="upgrade-choice-symbol" aria-hidden="true">＋</span></span><strong id="upgradeChoiceTitle1" class="upgrade-choice-title">升级选项二</strong><span id="upgradeChoiceDescription1" class="upgrade-choice-description">查看强化效果，选择适合本局的能力。</span><span class="upgrade-choice-action">选择强化 <span aria-hidden="true">↗</span></span></button>
         <button id="upgradeChoice2" class="upgrade-choice" type="button" data-choice-index="2" aria-keyshortcuts="3" aria-labelledby="upgradeChoiceTitle2" aria-describedby="upgradeChoiceDescription2"><span class="upgrade-choice-top"><kbd>3</kbd><span class="upgrade-choice-symbol" aria-hidden="true">＋</span></span><strong id="upgradeChoiceTitle2" class="upgrade-choice-title">升级选项三</strong><span id="upgradeChoiceDescription2" class="upgrade-choice-description">查看强化效果，选择适合本局的能力。</span><span class="upgrade-choice-action">选择强化 <span aria-hidden="true">↗</span></span></button>
+        <button id="upgradeChoice3" class="upgrade-choice hidden" type="button" data-choice-index="3" aria-keyshortcuts="4" aria-labelledby="upgradeChoiceTitle3" aria-describedby="upgradeChoiceDescription3"><span class="upgrade-choice-top"><kbd>4</kbd><span class="upgrade-choice-symbol" aria-hidden="true">＋</span></span><strong id="upgradeChoiceTitle3" class="upgrade-choice-title">升级选项四</strong><span id="upgradeChoiceDescription3" class="upgrade-choice-description">查看强化效果，选择适合本局的能力。</span><span class="upgrade-choice-action">选择强化 <span aria-hidden="true">↗</span></span></button>
+        <button id="upgradeChoice4" class="upgrade-choice hidden" type="button" data-choice-index="4" aria-keyshortcuts="5" aria-labelledby="upgradeChoiceTitle4" aria-describedby="upgradeChoiceDescription4"><span class="upgrade-choice-top"><kbd>5</kbd><span class="upgrade-choice-symbol" aria-hidden="true">＋</span></span><strong id="upgradeChoiceTitle4" class="upgrade-choice-title">升级选项五</strong><span id="upgradeChoiceDescription4" class="upgrade-choice-description">查看强化效果，选择适合本局的能力。</span><span class="upgrade-choice-action">选择强化 <span aria-hidden="true">↗</span></span></button>
+        <button id="upgradeChoice5" class="upgrade-choice hidden" type="button" data-choice-index="5" aria-keyshortcuts="6" aria-labelledby="upgradeChoiceTitle5" aria-describedby="upgradeChoiceDescription5"><span class="upgrade-choice-top"><kbd>6</kbd><span class="upgrade-choice-symbol" aria-hidden="true">＋</span></span><strong id="upgradeChoiceTitle5" class="upgrade-choice-title">升级选项六</strong><span id="upgradeChoiceDescription5" class="upgrade-choice-description">查看强化效果，选择适合本局的能力。</span><span class="upgrade-choice-action">选择强化 <span aria-hidden="true">↗</span></span></button>
       </div>
-      <p class="upgrade-instructions"><span class="upgrade-desktop-hint">点击卡片或按 <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> 选择</span><span class="upgrade-touch-hint">轻触卡片选择一项强化</span><span>强化仅在本局生效</span></p>
+      <p class="upgrade-instructions"><span class="upgrade-desktop-hint">点击卡片或按 <span class="upgrade-normal-hint"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></span><span class="upgrade-major-hint"><kbd>1</kbd>～<kbd>6</kbd></span> 选择</span><span class="upgrade-touch-hint">轻触卡片选择<span class="upgrade-major-hint"> · 上下滑动查看全部技能</span></span><span>每次仅选一项 · 仅本局生效</span></p>
     </div>
   </section>
 
@@ -90,7 +95,7 @@
 
   <section id="endMenu" class="overlay-screen hidden" aria-labelledby="endTitle"><div class="dialog-card results-card"><div class="eyebrow"><span class="short-rule"></span>AFTER ACTION REPORT</div><h2 id="endTitle">行动结束</h2><p id="endSubtitle">尸潮仍在来袭。整备装备，再次挑战存活纪录。</p><div class="result-score"><span>行动得分</span><strong id="endScore" class="mono">0</strong><span class="mono">POINTS</span></div><div class="result-level"><span>本局等级</span><span class="mono">Lv <strong id="endLevel">1</strong></span></div><div class="result-stats"><div><span>击退敌人</span><strong id="endKills" class="mono">0</strong></div><div><span>爆头击杀</span><strong id="endHeadshots" class="mono">0</strong></div><div><span>射击精度</span><strong id="endAccuracy" class="mono">0%</strong></div><div><span>存活时间</span><strong id="endTime" class="mono">00:00</strong></div></div><div class="result-actions"><button id="againBtn" class="primary-button">再次行动 <span>→</span></button><button id="endMapBtn" class="secondary-button">返回选图</button></div><div class="dialog-footnote mono">ZERO FRONTIER · FIELD SIMULATION II</div></div></section>
 
-  <div id="mobileControls" aria-label="触屏操作"><div id="joystick" aria-label="移动摇杆"><div id="stick"></div></div><button id="fireBtn" aria-label="攻击"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="11" stroke="currentColor" stroke-width="2"/><path d="M20 2v10m0 16v10M2 20h10m16 0h10" stroke="currentColor" stroke-width="2"/></svg></button><button id="reloadBtn">换弹</button><button id="jumpBtn">跳跃</button><button id="switchWeaponBtn">切刀</button></div>
+  <div id="mobileControls" aria-label="触屏操作"><div id="joystick" aria-label="移动摇杆"><div id="stick"></div></div><button id="fireBtn" aria-label="攻击"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="11" stroke="currentColor" stroke-width="2"/><path d="M20 2v10m0 16v10M2 20h10m16 0h10" stroke="currentColor" stroke-width="2"/></svg></button><button id="reloadBtn">换弹</button><button id="jumpBtn">跳跃</button><button id="switchWeaponBtn">切刀</button><button id="freezeBtn" type="button" aria-label="施放全场冰冻" title="全场冰冻 · 冷却 25 秒"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 3v26M5 9.5l22 13M5 22.5l22-13M12 6l4 4 4-4M12 26l4-4 4 4M6 14l5-1-1-5M22 24l-1-5 5-1M6 18l5 1-1 5M22 8l-1 5 5 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="freezeBtnText">冰冻</span></button></div>
   </div>
 </body>
 </html>
