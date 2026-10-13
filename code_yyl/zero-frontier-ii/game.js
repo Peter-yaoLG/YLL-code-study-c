@@ -655,7 +655,7 @@ function playHeadshotSound(){playCombatBuffer('head',.47,0);}
 function playHeadshotKillSound(){playCombatBuffer('headKill',.44,0);}
 
 function showNotice(txt,duration=2.4){$('notice').textContent=txt;noticeTimer=duration;$('notice').classList.add('visible');}
-function getBaseEnemyHealth(type){return type==='boss'?2000*Math.pow(2.5,bossState.count):type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
+function getBaseEnemyHealth(type){return type==='boss'?2000*Math.pow(1.2,bossState.count):type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
 function createEnemy(type,x,z,id){
  if(!ENEMY_TYPES[type])type='milk';
  const dog=type==='dog',initialDelay=rnd(1.8,3),baseMaxHp=getBaseEnemyHealth(type),enemyScale=getEnemyScaling(),maxHp=baseMaxHp*enemyScale,damageScale=getEnemyDamageScaling();
@@ -1140,7 +1140,7 @@ const MILK_BURST_INTERVAL=.12,MILK_BURST_COUNT=3,MILK_BURST_SPAN=MILK_BURST_INTE
 const BOSS_FIREBALL_WINDUP=.9,BOSS_FIREBALL_RECOVER=.45,BOSS_FIREBALL_CYCLE=4.5,BOSS_FIREBALL_SPEED=22;
 const BOSS_BREATH_WINDUP=1.1,BOSS_BREATH_RECOVER=.55,BOSS_BREATH_CYCLE=5,BOSS_BREATH_RANGE=7,BOSS_BREATH_HALF_ANGLE=35*Math.PI/180;
 const WITCH_POTION_RANGE=16,WITCH_POTION_RADIUS=3,WITCH_POTION_DAMAGE=30;
-const WITCH_POTION_WINDUP=.4,WITCH_POTION_RECOVER=.3,WITCH_POTION_CYCLE=3.6,WITCH_POTION_GRAVITY=14,WITCH_POTION_SIZE=.12;
+const WITCH_POTION_WINDUP=.4,WITCH_POTION_RECOVER=.3,WITCH_POTION_CYCLE=4.2,WITCH_POTION_GRAVITY=14,WITCH_POTION_SIZE=.12;
 const WITCH_SUPPORT_RADIUS=7,WITCH_ATTACK_RATE=1.2;
 const WITCH_REVIVAL_WINDOW=5,WITCH_REVIVAL_CHANCE=.3,WITCH_REVIVAL_HEALTH=.5;
 function enemyKind(enemy){return enemy.type==='boss'?'boss':enemy.type==='dog'?'dog':enemy.type==='witch'?'witch':'milk';}
