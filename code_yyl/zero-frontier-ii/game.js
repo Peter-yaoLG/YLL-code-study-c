@@ -363,9 +363,9 @@ function announceEnemyUnlock(){
  if(runProgress.level>=10&&!encounterState.witch){encounterState.witch=true;return showEncounter('Lv 10 · 女巫加入尸潮','女巫投掷紫色药瓶，造成3米范围喷溅伤害；为附近敌人提高攻速，并有30%机会复活刚死亡的队友。优先击败女巫，可获得62.5经验。');}
  return false;
 }
-function recordPlayerTrail(){playerTrail.push({at:elapsed,x:player.x,y:player.y-.3,z:player.z});while(playerTrail.length>2&&playerTrail[1].at<elapsed-1.1)playerTrail.shift();}
+function recordPlayerTrail(){playerTrail.push({at:elapsed,x:player.x,y:player.y-.3,z:player.z});while(playerTrail.length>2&&playerTrail[1].at<elapsed-.4)playerTrail.shift();}
 function delayedPlayerPosition(){
- const target=elapsed-1;for(let i=1;i<playerTrail.length;i++){const a=playerTrail[i-1],b=playerTrail[i];if(b.at>=target){const t=clamp((target-a.at)/Math.max(1e-9,b.at-a.at),0,1);return V(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,a.z+(b.z-a.z)*t);}}
+ const target=elapsed-.3;for(let i=1;i<playerTrail.length;i++){const a=playerTrail[i-1],b=playerTrail[i];if(b.at>=target){const t=clamp((target-a.at)/Math.max(1e-9,b.at-a.at),0,1);return V(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,a.z+(b.z-a.z)*t);}}
  const p=playerTrail[0];return p?V(p.x,p.y,p.z):V(player.x,player.y-.3,player.z);
 }
 let smallEnemyKills=0;
@@ -773,7 +773,7 @@ function updateEndlessSpawns(dt){
  if(runProgress.level>=50&&bossState.nextLevel>40&&!encounterState.doubaoSpawned&&(!bossState.spawned||bossState.defeated)){
   const enemy=spawnEnemy('doubao');if(!enemy){spawnTimer=.35;return;}
   playBossIntroMusic('doubao');encounterState.doubaoSpawned=true;Object.assign(bossState,{spawned:true,defeated:false,enemyId:enemy.id});enemy.laserCooldown=4;enemy.summonCooldown=8;enemy.attack=2;
-  showEncounter('Lv 50 · 关卡大 Boss：豆包','生命：'+Math.round(enemy.maxHp)+'（40级火龙实际生命 '+Math.round(encounterState.level40Health)+' × 2）。眼部激光：前摇1秒，持续4秒，追踪你1秒前的位置，冷却20秒；普通攻击：4枚红色光球，伤害为奶蛙的1.5倍；召唤：在周围召唤4只刀盾狗。持续移动，避开激光并及时清理召唤物。');return;
+  showEncounter('Lv 50 · 关卡大 Boss：豆包','生命：'+Math.round(enemy.maxHp)+'（40级火龙实际生命 '+Math.round(encounterState.level40Health)+' × 2）。眼部激光：前摇1秒，持续4秒，追踪你0.3秒前的位置，冷却20秒，持续命中每0.1秒造成8点伤害（非飞行物）；普通攻击：4枚红色光球，伤害为奶蛙的1.5倍；召唤：在周围召唤4只刀盾狗。持续移动，避开激光并及时清理召唤物。');return;
  }
  // Each twenty-level milestone queues one boss; the previous boss must be defeated first.
  if(runProgress.level>=bossState.nextLevel&&(!bossState.spawned||bossState.defeated)){bossSpawnRetry=Math.max(0,bossSpawnRetry-dt);if(bossSpawnRetry<=1e-9){spawnTimer=trySpawnBoss()?interval:.35;bossSpawnRetry=.35;}return;}
@@ -1642,19 +1642,27 @@ function doubaoLaserSegments(e){
  const target=delayedPlayerPosition();e.laserTarget=target;const segments=[];
  for(const side of [-1,1]){const from=doubaoEyeOrigin(e,side),delta=sub(target,from),distance=length(delta),direction=norm(delta),reach=Math.min(45,Math.max(distance+4,1),wallDistance(from,direction));segments.push({from,to:doubaoAdd(from,doubaoMul(direction,reach))});}return segments;
 }
-function strikeDoubaoLaser(e){
+function doubaoLaserHitsPlayer(e){
  const center=V(player.x,player.y-.3,player.z),segments=doubaoLaserSegments(e);e.laserSegments=segments;
  const hit=segments.some(({from,to})=>{const d=sub(to,from),len=dot(d,d),t=clamp(dot(sub(center,from),d)/Math.max(len,1e-9),0,1);return length(sub(center,doubaoAdd(from,doubaoMul(d,t))))<=.55;});
- if(hit)damage(8*(e.damageScale??1));
+ return hit;
+}
+function strikeDoubaoLaser(e){
+ if(doubaoLaserHitsPlayer(e)){damage(8,{projectile:false});return true;}return false;
 }
 function updateDoubaoEnemy(e,dt){
  if(state!=='playing'||isEnemyFrozen()||dt<=0||e.hp<=0)return;
  e.laserCooldown=Math.max(0,(e.laserCooldown??4)-dt);e.summonCooldown=Math.max(0,(e.summonCooldown??8)-dt);e.attack=Math.max(0,e.attack-dt);
  if(e.doubaoPhase==='windup'||e.doubaoPhase==='laser'){
   e.walking=false;e.laserTimer+=dt;const aim=delayedPlayerPosition();e.yaw=Math.atan2(aim.x-e.x,aim.z-e.z);
-  if(e.doubaoPhase==='windup'&&e.laserTimer>=1-1e-9){e.doubaoPhase='laser';e.laserTimer=Math.max(0,e.laserTimer-1);e.laserTick=0;}
+  if(e.doubaoPhase==='windup'&&e.laserTimer>=1-1e-9){e.doubaoPhase='laser';e.laserTimer=Math.max(0,e.laserTimer-1);e.laserContactTime=0;}
   if(e.doubaoPhase==='laser'){
-   e.laserSegments=doubaoLaserSegments(e);e.laserTick-=dt;if(e.laserTimer<4-1e-9&&e.laserTick<=1e-9){strikeDoubaoLaser(e);e.laserTick=.25;}
+   e.laserSegments=doubaoLaserSegments(e);
+   const activeDt=Math.min(dt,Math.max(0,e.laserTimer),Math.max(0,4-(e.laserTimer-dt)));
+   if(doubaoLaserHitsPlayer(e)){
+    e.laserContactTime=(e.laserContactTime||0)+activeDt;
+    while(e.laserContactTime>=.1-1e-9&&state==='playing'){e.laserContactTime=Math.max(0,e.laserContactTime-.1);strikeDoubaoLaser(e);}
+   }else e.laserContactTime=0;
    if(e.laserTimer>=4-1e-9){e.doubaoPhase='idle';e.laserSegments=[];e.laserCooldown=20;e.attack=Math.max(e.attack,.8);}
   }return;
  }
