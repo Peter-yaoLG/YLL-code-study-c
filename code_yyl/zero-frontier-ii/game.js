@@ -391,7 +391,12 @@ function getMaxHealth(){return 100+runProgress.maxHealthBonus;}
 function getMaxShield(){return runProgress.fireShield?50+runProgress.shieldBonus:0;}
 function getPlayerDamageMultiplier(){return 1+runProgress.damageBonus;}
 function getBulletDamage(headshot=false){return (1+runProgress.bulletBaseBonus)*getPlayerDamageMultiplier()*(headshot?HEADSHOT_DAMAGE_MULTIPLIER:1);}
-function getBulletUpgradeGain(id,level=runProgress.pendingLevels[0]??runProgress.level){return (id==='majorBullet'?3:.5)*(level>=40?4:level>=20?2:1);}
+function getUpgradeLevel(){const reward=runProgress.pendingLevels[0];return typeof reward==='object'?reward.level:reward??runProgress.level;}
+function getUpgradeMultiplier(){return Math.pow(2,Math.floor(getUpgradeLevel()/20));}
+function getBulletUpgradeGain(id,level=getUpgradeLevel()){return (id==='majorBullet'?3:.5)*Math.pow(2,Math.floor(level/20));}
+const UPGRADE_DROP_CHANCE=.05,UPGRADE_DROP_LIFETIME=10;
+function openStartingChest(){const chest={x:player.x,z:player.z,kind:'starting'};bossChests.push(chest);return openBossChest(chest);}
+function collectUpgradeReward(){runProgress.pendingLevels.push({level:runProgress.level,kind:'normal',source:'drop'});openLevelUpgrade();}
 function getReloadDuration(){return 1.65/(1+runProgress.reloadRanks*.1);}
 function getEnemyCap(){return ENDLESS_ENEMY_CAP+Math.floor(runProgress.level/10);}
 function getSmallEnemyCount(){return enemies.filter(enemy=>enemyKind(enemy)!=='boss').length;}
@@ -414,31 +419,31 @@ function updateProgressHUD(){
  if(track.dataset.xpState!==key){track.dataset.xpState=key;track.setAttribute('aria-valuenow',String(value));track.setAttribute('aria-valuemax',String(required));}
 }
 function upgradeDescription(id){
- const percent=Math.round(runProgress.damageBonus*100);
+ const percent=Math.round(runProgress.damageBonus*100),gain=getUpgradeMultiplier();
  switch(id){
-  case 'bullet':return {title:'强化弹头',text:`子弹基础伤害 +${getBulletUpgradeGain(id)}：${1+runProgress.bulletBaseBonus} → ${1+runProgress.bulletBaseBonus+getBulletUpgradeGain(id)}。20级起加成翻倍，40级起再翻倍。爆头仍为 4 倍，无上限。`};
-  case 'reload':return {title:'快速装填',text:`换弹速度 +20%：${runProgress.reloadRanks*10}% → ${Math.min(200,(runProgress.reloadRanks+2)*10)}%。最多 +200%。`};
-  case 'health':return {title:'体能强化',text:`生命上限 +20：${getMaxHealth()} → ${getMaxHealth()+20}，同时恢复 20 点生命，无上限。`};
-  case 'damage':return {title:'伤害强化',text:`枪械与近战伤害加成 +20%：${percent}% → ${percent+20}%，无上限。`};
+  case 'bullet':return {title:'强化弹头',text:`子弹基础伤害 +${getBulletUpgradeGain(id)}：${1+runProgress.bulletBaseBonus} → ${1+runProgress.bulletBaseBonus+getBulletUpgradeGain(id)}。每过20级加成翻倍。爆头仍为 4 倍，无上限。`};
+  case 'reload':return {title:'快速装填',text:`换弹速度 +${20*gain}%：${runProgress.reloadRanks*10}% → ${Math.min(200,(runProgress.reloadRanks+2*gain)*10)}%。最多 +200%。`};
+  case 'health':return {title:'体能强化',text:`生命上限 +${20*gain}：${getMaxHealth()} → ${getMaxHealth()+20*gain}，同时恢复 ${20*gain} 点生命，无上限。`};
+  case 'damage':return {title:'伤害强化',text:`枪械与近战伤害加成 +${20*gain}%：${percent}% → ${percent+20*gain}%，无上限。`};
   case 'dodge':return {title:'灵巧闪避',text:`闪避概率 +5%：${Math.round(getDodgeChance()*100)}% → ${Math.round(Math.min(getDodgeCap(),getDodgeChance()+.05)*100)}%。上限 ${Math.round(getDodgeCap()*100)}%，闪避成功不受本次伤害。`};
-  case 'leech':return {title:'子弹汲取',text:`按子弹实际造成伤害的 ${(runProgress.leechLevel+1)*30}% 回血。每次强化增加 30 个百分点，爆头也生效。`};
-  case 'majorDamage':return {title:'火力突破',text:`枪械与近战伤害加成 +30%：${percent}% → ${percent+30}%，无上限。`};
-  case 'majorHealth':return {title:'生命突破',text:`生命上限 +50：${getMaxHealth()} → ${getMaxHealth()+50}，同时恢复 50 点生命，无上限。`};
-  case 'freeze':return {title:'极寒延伸',text:`冰冻 ${3+runProgress.freezeRanks} → ${4+runProgress.freezeRanks} 秒，后续减速 ${2+runProgress.freezeRanks*2} → ${4+runProgress.freezeRanks*2} 秒。减速 50%，冷却 25 秒，可重复强化。`};
-  case 'majorBullet':return {title:'重型弹头',text:`子弹基础伤害 +${getBulletUpgradeGain(id)}：${1+runProgress.bulletBaseBonus} → ${1+runProgress.bulletBaseBonus+getBulletUpgradeGain(id)}。20级起加成翻倍，40级起再翻倍。受伤害加成影响，爆头仍为 4 倍，无上限。`};
-  case 'shieldUpgrade':return {title:'护盾强化',text:`火焰保护罩上限 +30：${getMaxShield()} → ${getMaxShield()+30}，同时恢复 30 点护盾。停止受伤后用 5 秒回满，可重复强化。`};
+  case 'leech':return {title:'子弹汲取',text:`按子弹实际造成伤害的 ${(runProgress.leechLevel+gain)*30}% 回血。本次强化增加 ${30*gain} 个百分点，爆头也生效。`};
+  case 'majorDamage':return {title:'火力突破',text:`枪械与近战伤害加成 +${30*gain}%：${percent}% → ${percent+30*gain}%，无上限。`};
+  case 'majorHealth':return {title:'生命突破',text:`生命上限 +${50*gain}：${getMaxHealth()} → ${getMaxHealth()+50*gain}，同时恢复 ${50*gain} 点生命，无上限。`};
+  case 'freeze':return {title:'极寒延伸',text:`冰冻 ${3+runProgress.freezeRanks} → ${3+runProgress.freezeRanks+gain} 秒，后续减速 ${2+runProgress.freezeRanks*2} → ${2+(runProgress.freezeRanks+gain)*2} 秒。减速 50%，冷却 25 秒，可重复强化。`};
+  case 'majorBullet':return {title:'重型弹头',text:`子弹基础伤害 +${getBulletUpgradeGain(id)}：${1+runProgress.bulletBaseBonus} → ${1+runProgress.bulletBaseBonus+getBulletUpgradeGain(id)}。每过20级加成翻倍。受伤害加成影响，爆头仍为 4 倍，无上限。`};
+  case 'shieldUpgrade':return {title:'护盾强化',text:`火焰保护罩上限 +${30*gain}：${getMaxShield()} → ${getMaxShield()+30*gain}，同时恢复 ${30*gain} 点护盾。停止受伤后用 5 秒回满，可重复强化。`};
  }
 }
 function openLevelUpgrade(){
  if(!runProgress.pendingLevels.length||!player||player.hp<=0)return;
- const level=runProgress.pendingLevels[0],major=level%10===0;
+ const reward=runProgress.pendingLevels[0],level=getUpgradeLevel(),major=typeof reward==='number'&&level%10===0;
  state='upgrading';clearTouchInput();cancelMilkBursts();cancelLock();
  document.body.classList.remove('mouse-captured');document.exitPointerLock?.();$('pauseMenu').classList.add('hidden');
  let pool=major?[...MAJOR_UPGRADES,...(runProgress.fireShield?['shieldUpgrade']:[])]:['bullet','reload','health','damage','dodge'].filter(id=>(id!=='reload'||runProgress.reloadRanks<20)&&(id!=='dodge'||getDodgeChance()<getDodgeCap()-1e-9));
  if(!major)for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
  runProgress.choices=major?pool:pool.slice(0,3);
  $('upgradeMenu').classList.toggle('major-upgrade',major);
- $('upgradeTitle').textContent=major?`Lv ${level} · 大升级`:`Lv ${level} · 等级提升`;
+ $('upgradeTitle').textContent=typeof reward==='object'?'战利品 · 小升级奖励包':major?`Lv ${level} · 大升级`:`Lv ${level} · 等级提升`;
  $('upgradeSubtitle').textContent=major?'从全部大技能中任选一项。战斗与存活计时已暂停。':'三选一强化，仅在本局生效。战斗与存活计时已暂停。';
  $('upgradeChoices').setAttribute('aria-label',major?'全部大技能任选一项':'三选一强化');
  for(let i=0;i<6;i++){const id=runProgress.choices[i],card=$('upgradeChoice'+i);card.classList.toggle('hidden',!id);if(!id)continue;const option=upgradeDescription(id);$('upgradeChoiceTitle'+i).textContent=option.title;$('upgradeChoiceDescription'+i).textContent=option.text;card.disabled=false;}
@@ -460,14 +465,14 @@ function chooseLevelUpgrade(index){
  if(id==='shieldUpgrade'&&!runProgress.fireShield)return;
  for(let i=0;i<6;i++)$('upgradeChoice'+i).disabled=true;
  if(id==='bullet')runProgress.bulletBaseBonus+=getBulletUpgradeGain(id);
- else if(id==='reload')runProgress.reloadRanks=Math.min(20,runProgress.reloadRanks+2);
- else if(id==='health'||id==='majorHealth'){const gain=id==='health'?20:50;runProgress.maxHealthBonus+=gain;player.hp=Math.min(getMaxHealth(),player.hp+gain);}
- else if(id==='damage'||id==='majorDamage')runProgress.damageBonus=Math.round((runProgress.damageBonus+(id==='damage'?.2:.3))*100)/100;
+ else if(id==='reload')runProgress.reloadRanks=Math.min(20,runProgress.reloadRanks+2*getUpgradeMultiplier());
+ else if(id==='health'||id==='majorHealth'){const gain=(id==='health'?20:50)*getUpgradeMultiplier();runProgress.maxHealthBonus+=gain;player.hp=Math.min(getMaxHealth(),player.hp+gain);}
+ else if(id==='damage'||id==='majorDamage')runProgress.damageBonus=Math.round((runProgress.damageBonus+(id==='damage'?.2:.3)*getUpgradeMultiplier())*100)/100;
  else if(id==='dodge')runProgress.dodgeRanks++;
- else if(id==='leech')runProgress.leechLevel++;
- else if(id==='freeze')runProgress.freezeRanks++;
+ else if(id==='leech')runProgress.leechLevel+=getUpgradeMultiplier();
+ else if(id==='freeze')runProgress.freezeRanks+=getUpgradeMultiplier();
  else if(id==='majorBullet')runProgress.bulletBaseBonus+=getBulletUpgradeGain(id);
- else if(id==='shieldUpgrade'){runProgress.shieldBonus+=30;shieldState.value=Math.min(getMaxShield(),shieldState.value+30);shieldState.regenStart=shieldState.value;shieldState.regenElapsed=0;}
+ else if(id==='shieldUpgrade'){const gain=30*getUpgradeMultiplier();runProgress.shieldBonus+=gain;shieldState.value=Math.min(getMaxShield(),shieldState.value+gain);shieldState.regenStart=shieldState.value;shieldState.regenElapsed=0;}
  if(reload>0)reload*=getReloadDuration()/oldReloadDuration;
  runProgress.pendingLevels.shift();runProgress.choices=[];clearTouchInput();
  if(runProgress.pendingLevels.length){openLevelUpgrade();return;}
@@ -485,6 +490,7 @@ function openBossChest(chest){
  const index=bossChests.indexOf(chest);if(state!=='playing'||index<0||!player||player.hp<=0)return false;
  bossChests.splice(index,1);chestRewardPending=true;state='chest';clearTouchInput();cancelMilkBursts();cancelLock();
  document.body.classList.remove('mouse-captured');document.exitPointerLock?.();$('pauseMenu').classList.add('hidden');
+ $('chestTitle').textContent=chest.kind==='starting'?'开局宝箱':'火龙宝藏';$('chestSubtitle').textContent=chest.kind==='starting'?'从六项技能中任选一项，选择后开始战斗。':'击败火龙奶娃，选择一份战利品。战斗已暂停。';
  for(const [id,button]of CHEST_REWARDS){$(button).disabled=!!runProgress[id];$(button).classList.toggle('owned',!!runProgress[id]);}
  $('chestMenu').classList.remove('hidden');$(CHEST_REWARDS.find(([id])=>!runProgress[id])?.[1]||'chestChoiceFire').focus();updateHUD();return true;
 }
@@ -733,7 +739,7 @@ function spawnWave(){
  spawnTimer=enemies.length<ENDLESS_INITIAL_ENEMIES?.35:getSpawnInterval();
  showNotice('无尽尸潮 · 坚持更久，敌人会更快抵达',3);tone(420,.15,'sine');
 }
-function begin(){syncMobileOrientation();clearTouchInput();if(!touchDevice()&&document.pointerLockElement!==canvas){requestLock('start');return;}resetRunProgress();akTracers.length=0;difficulty=$('difficulty').value;player={x:currentMap.spawn[0],y:STANDING_EYE_HEIGHT,z:currentMap.spawn[1],yaw:0,pitch:0,hp:100,bleedUntil:0,bleedNextTick:0,vx:0,vz:0,horizontalSpeed:0,vy:0,ground:true,feetY:0,eyeHeight:STANDING_EYE_HEIGHT,crouching:false};activeWeapon='ak';previousWeapon='knife';weaponSwitch=null;queuedWeapon=null;knifeAttackTimer=0;knifeStrikePending=false;knifeSwings=0;knifeHits=0;wave=1;score=0;kills=0;shots=0;hits=0;headshots=0;headshotKills=0;headshotTimer=0;lastHitHeadshot=false;elapsed=0;ammo=30;reserve=180;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;fire=false;keys={};bullets=[];particles=[];pickups=currentMap.supplies.map(([x,z])=>({x,z,phase:0}));touchMove=V();$('menu').classList.add('hidden');$('pauseMenu').classList.add('hidden');$('endMenu').classList.add('hidden');$('hud').classList.remove('hidden');document.body.classList.add('playing');state='playing';prepareCombatAudio();spawnWave();tone(280,.18,'triangle',.03,250);updateHUD();}
+function begin(){syncMobileOrientation();clearTouchInput();if(!touchDevice()&&document.pointerLockElement!==canvas){requestLock('start');return;}resetRunProgress();akTracers.length=0;difficulty=$('difficulty').value;player={x:currentMap.spawn[0],y:STANDING_EYE_HEIGHT,z:currentMap.spawn[1],yaw:0,pitch:0,hp:100,bleedUntil:0,bleedNextTick:0,vx:0,vz:0,horizontalSpeed:0,vy:0,ground:true,feetY:0,eyeHeight:STANDING_EYE_HEIGHT,crouching:false};activeWeapon='ak';previousWeapon='knife';weaponSwitch=null;queuedWeapon=null;knifeAttackTimer=0;knifeStrikePending=false;knifeSwings=0;knifeHits=0;wave=1;score=0;kills=0;shots=0;hits=0;headshots=0;headshotKills=0;headshotTimer=0;lastHitHeadshot=false;elapsed=0;ammo=30;reserve=180;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;fire=false;keys={};bullets=[];particles=[];pickups=currentMap.supplies.map(([x,z])=>({x,z,phase:0}));touchMove=V();$('menu').classList.add('hidden');$('pauseMenu').classList.add('hidden');$('endMenu').classList.add('hidden');$('hud').classList.remove('hidden');document.body.classList.add('playing');state='playing';prepareCombatAudio();spawnWave();tone(280,.18,'triangle',.03,250);updateHUD();openStartingChest();}
 function lockFailed(error,generation){if(generation!==lockGeneration||!pendingLock)return;$('lockMenu').classList.remove('hidden');$('lockMessage').textContent=state==='paused'?'鼠标未能重新锁定，游戏保持暂停。':'当前窗口未能锁定鼠标，游戏尚未开始。';$('lockDetails').textContent=`请在 Chrome / Edge 独立窗口打开游戏地址 ${gameAddress}，再点击开始行动，或点击下方按钮重试。`;$('retryLockBtn').disabled=false;document.body.dataset.lockError=error?.name||'PointerLockError';console.warn('Pointer lock unavailable:',error?.name,error?.message);}
 function issueLockRequest(generation,raw,fallback=false){
  if(generation!==lockGeneration||!pendingLock)return;
@@ -965,11 +971,12 @@ function defeatEnemy(target,headshot=false){
  const index=enemies.indexOf(target);if(index<0)return;
  const kind=enemyKind(target),dog=kind==='dog',boss=kind==='boss';score+=boss?1000:dog?200+wave*40:kind==='witch'?150+wave*30:100+wave*25;kills++;
  if(!boss)smallEnemyKills++;
- if(runProgress.healthConverter&&++runProgress.converterKills%5===0){runProgress.maxHealthBonus++;player.hp=Math.min(getMaxHealth(),player.hp+1);showNotice('血量转换器 · 生命上限 +1',1.8);}
+ if(runProgress.healthConverter&&++runProgress.converterKills%15===0){runProgress.maxHealthBonus+=10;player.hp=Math.min(getMaxHealth(),player.hp+10);showNotice('血量转换器 · 生命上限 +10',1.8);}
  if(headshot){score+=HEADSHOT_KILL_BONUS;headshotKills++;}
  burst(target.x,target.y,target.z,headshot?HEADSHOT_COLOR:palettes.lime,18);
  if(boss){bossState.defeated=true;dropBossChest(target);}
  else if(dog||kills%3===0){if(pickups.length>=ENDLESS_PICKUP_CAP)pickups.shift();pickups.push({x:target.x,y:.45,z:target.z,phase:0,health:dog?40:25,ammo:dog?45:30,kind:dog?'dog':'milk',dropAge:0,dropLifetime:5});}
+ if(!boss&&Math.random()<UPGRADE_DROP_CHANCE){if(pickups.length>=ENDLESS_PICKUP_CAP)pickups.shift();pickups.push({x:target.x,y:.65,z:target.z,phase:0,kind:'upgrade',dropAge:0,dropLifetime:UPGRADE_DROP_LIFETIME});}
  recordEnemyDeath(target);enemies.splice(index,1);
  if(kind==='witch'){enemyNavigation.grids.delete('witch-follow-'+target.id);refreshEnemySupport();}
  if(headshot)playHeadshotKillSound();else tone(210,.22,'sawtooth',.035,-140);
@@ -1125,7 +1132,7 @@ function updateDefenseHUD(){
  const items=[`闪避 ${Math.round(getDodgeChance()*100)}% / ${Math.round(getDodgeCap()*100)}%`];
  if(runProgress.damageCloak)items.push(`免伤衣 ${Math.max(0,runProgress.damageCloakReadyAt-elapsed)>0?Math.ceil(runProgress.damageCloakReadyAt-elapsed)+'s':'就绪'}`);
  if(runProgress.lastStand)items.push(`名刀 ${runProgress.lastStandUsed?'已使用':'可免死'}`);
- if(runProgress.healthConverter)items.push(`转换 ${runProgress.converterKills%5}/5`);
+ if(runProgress.healthConverter)items.push(`转换 ${runProgress.converterKills%15}/15`);
  setHudText('defenseStatus',items.join(' · '));setHudClass('defenseStatus','hidden',!player||state==='menu');
 }
 function updateHUD(){updateDefenseHUD();
@@ -1641,7 +1648,7 @@ function update(dt){if(state!=='playing')return;if(!touchDevice()&&document.poin
  updateEnemyCombat(enemyFrame.normalDt,1);
  if(state!=='playing'){updateHUD();return;}
  for(let i=particles.length-1;i>=0;i--){let p=particles[i];p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.vy-=dt*7;if(p.life<=0)particles.splice(i,1);}
- for(let i=pickups.length-1;i>=0;i--){let p=pickups[i];if(p.dropLifetime>0){p.dropAge=(p.dropAge||0)+dt;if(p.dropAge>=p.dropLifetime-1e-9){pickups.splice(i,1);continue;}}p.phase+=dt;if(Math.hypot(player.x-p.x,player.z-p.z)<1.7){const heal=p.health||25,rounds=p.ammo||30;player.hp=Math.min(getMaxHealth(),player.hp+heal);reserve+=rounds;pickups.splice(i,1);showNotice(`补给已拾取 · 生命 +${heal} / 弹药 +${rounds}`,2);tone(700,.2,'sine',.04,350);}}
+ for(let i=pickups.length-1;i>=0;i--){let p=pickups[i];if(p.dropLifetime>0){p.dropAge=(p.dropAge||0)+dt;if(p.dropAge>=p.dropLifetime-1e-9){pickups.splice(i,1);continue;}}p.phase+=dt;if(Math.hypot(player.x-p.x,player.z-p.z)<1.7){if(p.kind==='upgrade'){pickups.splice(i,1);collectUpgradeReward();tone(850,.2,'sine',.04,300);updateHUD();return;}const heal=p.health||25,rounds=p.ammo||30;player.hp=Math.min(getMaxHealth(),player.hp+heal);reserve+=rounds;pickups.splice(i,1);showNotice(`补给已拾取 · 生命 +${heal} / 弹药 +${rounds}`,2);tone(700,.2,'sine',.04,350);}}
  updateWitchRevival(enemyFrame.activeDt);updateEndlessSpawns(dt);updateShield(dt);updateHUD();
 }
 /* Warm, pear-shaped milk character matched to the supplied four views.
@@ -2957,6 +2964,22 @@ function drawFlameLinks(out,eye){
   }
  }
 }
+let upgradePickupGpu=null;
+function prepareUpgradePickup(){
+ if(upgradePickupGpu)return;
+ const out=[],navy=[.045,.12,.19],metal=[.33,.48,.54],gold=[1,.68,.13],cyan=[.18,.96,1];
+ box(out,0,0,0,1.05,.68,.85,navy);box(out,0,.37,0,1.12,.12,.92,metal);
+ for(const x of [-.43,.43]){box(out,x,0,0,.09,.78,.9,gold,.25);box(out,x,.44,0,.09,.04,.94,gold,.6);}
+ for(const z of [-.44,.44]){box(out,0,-.25,z,1.1,.08,.055,metal);box(out,0,.22,z,1.1,.07,.055,gold,.4);}
+ for(const x of [-.59,.59]){box(out,x,0,0,.055,.23,.35,metal);box(out,x,.12,0,.1,.04,.35,gold);}
+ for(const z of [-.466,.466]){box(out,0,0,z,.4,.38,.04,navy);box(out,0,-.02,z*1.06,.09,.24,.03,cyan,1.3);bossTriangle(out,[-.17,.065,z*1.06],[0,.23,z*1.06],[.17,.065,z*1.06],cyan);}
+ box(out,0,.49,0,.2,.13,.2,cyan,1.4);upgradePickupGpu=mesh(out);
+}
+function drawUpgradePickup(p,vp,eye){
+ prepareUpgradePickup();const age=p.dropAge||0,scale=age<=7?1:clamp((10-age)/3,0,1);
+ if(scale<=0)return;
+ draw(upgradePickupGpu,vp,eye,1,witchPotionSetMatrix(p.x,.63+Math.sin(p.phase*3)*.09,p.z,p.phase*.55,0,0,scale,scale,scale));
+}
 function drawEnemyPickup(p,out){
  const scale=p.dropLifetime>0?clamp(1-(p.dropAge||0)/p.dropLifetime,0,1):1;if(scale<=0)return;
  const boosted=p.kind==='dog',c=boosted?[1,.74,.27]:palettes.lime,y=(.40+Math.sin(time*3)*.1)*scale,size=(boosted?.62:.5)*scale;
@@ -2992,7 +3015,7 @@ function render(){resize();updateCrosshair();updateFreezeHUD();const w=canvas.wi
   drawFlameLinks(effectData,eye);
   for(const enemy of enemies)if(enemy.burning&&enemy.hp>0){for(let i=0;i<5;i++){const angle=i*Math.PI*2/5+elapsed*1.6,r=enemySettings(enemy).radius*.72,y=.2+((elapsed*1.3+i*.2)%1)*1.4;box(effectData,enemy.x+Math.cos(angle)*r,y,enemy.z+Math.sin(angle)*r,.12,.3,.12,i%2?[1,.62,.08]:[1,.24,.04],1,angle);}}
   for(const p of particles)box(effectData,p.x,p.y,p.z,.07,.07,.07,p.c,1);
-  for(const p of pickups)drawEnemyPickup(p,effectData);
+  for(const p of pickups){if(p.kind==='upgrade')drawUpgradePickup(p,vp,eye);else drawEnemyPickup(p,effectData);}
  }
  if(state!=='menu'){syncAKTracerMuzzles(eye,yaw,pitch);drawAKTracers(effectData,eye);}
  drawEffects(vp,eye);
