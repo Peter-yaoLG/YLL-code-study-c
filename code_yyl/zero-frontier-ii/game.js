@@ -687,7 +687,7 @@ const MENU_MUSIC_BASE64="//FQgAOf/NwATGF2YzYxLjMuMTAwAEIgCMEYOP/xUIAiv/whFcu/Dga
 let menuMusic=null;
 function playMenuMusic(){
  if(state!=='menu'||!sound||!window.Audio)return false;
- try{if(!menuMusic){menuMusic=new window.Audio('data:audio/aac;base64,'+MENU_MUSIC_BASE64);menuMusic.loop=true;menuMusic.volume=.3;menuMusic.onplaying=()=>{$('menuMusicStatus').textContent='♫ 背景音乐 · 播放中';};menuMusic.onpause=()=>{$('menuMusicStatus').textContent=sound?'♫ 背景音乐 · 点击界面播放':'♫ 背景音乐 · 已关闭';};}if(menuMusic.paused){const played=menuMusic.play();played?.catch?.(()=>{$('menuMusicStatus').textContent='♫ 背景音乐 · 点击界面播放';});}return true;}catch{return false;}
+ try{if(!menuMusic){menuMusic=new window.Audio('data:audio/aac;base64,'+MENU_MUSIC_BASE64);menuMusic.id='menuMusicPlayer';menuMusic.hidden=true;document.body.appendChild?.(menuMusic);menuMusic.loop=true;menuMusic.autoplay=true;menuMusic.preload='auto';menuMusic.volume=.3;menuMusic.onplaying=()=>{$('menuMusicStatus').textContent='♫ 背景音乐 · 播放中';};menuMusic.onpause=()=>{$('menuMusicStatus').textContent=sound?'♫ 背景音乐 · 已暂停':'♫ 背景音乐 · 已关闭';};}if(menuMusic.paused){const played=menuMusic.play();played?.catch?.(()=>{$('menuMusicStatus').textContent='♫ 背景音乐 · 已暂停';});}return true;}catch{return false;}
 }
 function stopMenuMusic(){if(menuMusic){try{menuMusic.pause();menuMusic.currentTime=0;}catch{}}}
 document.addEventListener('pointerdown',()=>{if(state==='menu'&&!pendingLock)playMenuMusic();});
@@ -1632,9 +1632,9 @@ function launchDoubaoOrbs(e){
 }
 function summonDoubaoDogs(e){
  let count=0;for(let i=0;i<4&&getSmallEnemyCount()<getEnemyCap();i++){
-  for(const radius of [4,5.2,6.4]){const a=e.yaw+i*Math.PI/2,x=e.x+Math.sin(a)*radius,z=e.z+Math.cos(a)*radius;
+  slot:for(const offset of [0,-.3,.3,-.6,.6])for(const radius of [4,5.2,6.4]){const a=e.yaw+i*Math.PI/2+offset,x=e.x+Math.sin(a)*radius,z=e.z+Math.cos(a)*radius;
    if(Math.hypot(x-player.x,z-player.z)<8||!canStand(x,z,ENEMY_TYPES.dog.radius,0)||x<-21.5||x>21.5||z<-27.5||z>26.5||enemies.some(other=>other.hp>0&&Math.hypot(x-other.x,z-other.z)<enemySettings(other).radius+ENEMY_TYPES.dog.radius+ENEMY_GAP))continue;
-   const dog=createEnemy('dog',x,z,nextEnemyId++);enemies.push(dog);spawned++;count++;burst(x,.6,z,[1,.2,.12],16);break;
+   const dog=createEnemy('dog',x,z,nextEnemyId++);enemies.push(dog);spawned++;count++;burst(x,.6,z,[1,.2,.12],16);break slot;
   }
  }showNotice(`豆包召唤 · ${count}只刀盾狗`,2);return count;
 }
@@ -1663,7 +1663,7 @@ function updateDoubaoEnemy(e,dt){
  if(e.laserCooldown<=1e-9&&distance<=40&&visible(e,player)){e.doubaoPhase='windup';e.laserTimer=0;e.laserSegments=[];e.walking=false;showNotice('豆包 · 眼部激光蓄力',1);return;}
  if(e.attack<=1e-9&&distance<=35&&visible(e,player)){launchDoubaoOrbs(e);e.attack=2.8;}
 }
-let doubaoGpu=null,doubaoOrbGpu=null;
+let doubaoGpu=null,doubaoOrbGpu=null,doubaoOrbRingGpu=null;
 function prepareDoubaoModel(){
  if(doubaoGpu)return;const data=[],skin=[.91,.70,.56],hair=[.065,.044,.032],dark=[.035,.045,.052];
  milkEllipsoid(data,0,1.82,0,.65,.92,.4,dark,18,10);
@@ -1683,9 +1683,10 @@ function prepareDoubaoModel(){
  for(let i=0;i<6;i++)milkEllipsoid(data,-.45+i*.18,3.69,.23,.19,.28,.38,hair,12,8);
  for(const x of [-.27,.27])for(const y of [1.55,1.85,2.15])box(data,x,y,.39,.04,.04,.025,[.72,.76,.8],.2);
  doubaoGpu=mesh(data);const orb=[];milkEllipsoid(orb,0,0,0,.14,.14,.14,[1,.075,.035],12,8);for(let i=9;i<orb.length;i+=10)orb[i]=1.5;doubaoOrbGpu=mesh(orb);
+ const rings=[];for(let plane=0;plane<2;plane++)for(let i=0;i<24;i++){const a=i*Math.PI/12,b=(i+1)*Math.PI/12,point=(angle,r)=>plane?[Math.sin(angle)*r,Math.cos(angle)*r,0]:[Math.sin(angle)*r,0,Math.cos(angle)*r],pts=[point(a,.177),point(a,.203),point(b,.203),point(b,.177)];for(const k of [0,1,2,0,2,3])rings.push(...pts[k],0,1,0,1,.3,.08,1.5);}doubaoOrbRingGpu=mesh(rings);
 }
 function drawDoubaoModel(e,vp,eye){prepareDoubaoModel();draw(doubaoGpu,vp,eye,1,witchPotionSetMatrix(e.x,e.y,e.z,e.yaw),Math.max(0,e.flash||0));}
-function drawDoubaoOrb(b,vp,eye){prepareDoubaoModel();draw(doubaoOrbGpu,vp,eye,1,witchPotionSetMatrix(b.x,b.y,b.z));}
+function drawDoubaoOrb(b,vp,eye){prepareDoubaoModel();draw(doubaoOrbGpu,vp,eye,1,witchPotionSetMatrix(b.x,b.y,b.z));draw(doubaoOrbRingGpu,vp,eye,1,orbMatrix(b.x,b.y,b.z,getEnemyVisualTime()*5+(b.phase||0)));}
 function appendDoubaoBeam(out,from,to,eye,width,color){
  const d=norm(sub(to,from)),toward=norm(sub(eye,from));let side=norm(V(d.y*toward.z-d.z*toward.y,d.z*toward.x-d.x*toward.z,d.x*toward.y-d.y*toward.x));if(length(side)<.01)side=V(1,0,0);
  for(const [p,sign]of [[from,-1],[from,1],[to,1],[from,-1],[to,1],[to,-1]]){const v=doubaoAdd(p,doubaoMul(side,width*sign));out.push(v.x,v.y,v.z,0,1,0,...color,1.5);}
@@ -3220,4 +3221,5 @@ function updateFPS(now){
 }
 document.addEventListener('visibilitychange',()=>{fpsStart=null;fpsFrames=0;});
 function frame(now){const dt=Math.min((now-last)/1000,.04);last=now;if(state!=='upgrading'&&state!=='chest'&&state!=='intro')time+=dt;update(dt);render();updateFPS(now);requestAnimationFrame(frame);}requestAnimationFrame(frame);
+playMenuMusic();
 })();
