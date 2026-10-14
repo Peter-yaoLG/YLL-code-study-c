@@ -375,7 +375,7 @@ function advanceFreezeSkill(dt){
  freezeFrame.activeDt=activeDt;freezeFrame.slowDt=slowDt;freezeFrame.normalDt=activeDt-slowDt;
  return freezeFrame;
 }
-const runProgress={level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,healthConverter:false,converterKills:0,damageCloakReadyAt:0};
+const runProgress={level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,lastStandReadyAt:0,healthConverter:false,converterKills:0,damageCloakReadyAt:0};
 const CHEST_REWARDS=[['fireBullets','chestChoiceFire'],['fireShield','chestChoiceShield'],['dodgeCloak','chestChoiceDodge'],['damageCloak','chestChoiceArmor'],['lastStand','chestChoiceLastStand'],['healthConverter','chestChoiceConverter']];
 function getDodgeCap(){return runProgress.dodgeCloak?.7:.4;}
 function getDodgeChance(){return Math.min(getDodgeCap(),runProgress.dodgeRanks*.05);}
@@ -406,7 +406,7 @@ function healthAfterDamage(health,amount){const remaining=health-amount;return r
 function healFromBullet(dealtDamage){if(player&&player.hp>0&&runProgress.leechLevel>0&&dealtDamage>0)player.hp=Math.min(getMaxHealth(),player.hp+dealtDamage*.3*runProgress.leechLevel);}
 function resetRunProgress(){
  smallEnemyKills=0;
- Object.assign(runProgress,{level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,healthConverter:false,converterKills:0,damageCloakReadyAt:0});
+ Object.assign(runProgress,{level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,lastStandReadyAt:0,healthConverter:false,converterKills:0,damageCloakReadyAt:0});
  bossChests.length=0;chestRewardPending=false;Object.assign(shieldState,{value:0,regenStart:0,regenElapsed:0,lastHitAt:-Infinity});$('chestMenu').classList.add('hidden');
  xpAwardDeferral=0;flameLinks.length=0;
  $('upgradeMenu').classList.add('hidden');$('upgradeMenu').classList.remove('major-upgrade');
@@ -1063,14 +1063,19 @@ function shoot(){
  if(ammo===0&&reserve===0){reserve=60;showNotice('紧急弹药已补给 · 按 R 换弹');}
  updateHUD();
 }
-function damage(n,{canDodge=true}={}){
+function blockIncomingProjectile(){
+ if(state!=='playing'||!player||!runProgress.fireShield||Math.random()>=.5)return false;
+ burst(player.x,player.y-.3,player.z,[1,.65,.12],12);damageFlash=.12;showNotice('火焰护盾 · 飞行物已格挡',1);tone(720,.12,'triangle',.035,-240);return true;
+}
+function damage(n,{canDodge=true,projectile=false}={}){
  if(state!=='playing'||!player||n<=0)return false;
+ if(projectile&&blockIncomingProjectile())return false;
  if(canDodge&&getDodgeChance()>0&&Math.random()<getDodgeChance()){showNotice('闪避成功',.7);tone(520,.08,'sine',.025,160);return false;}
  if(runProgress.damageCloak&&elapsed>=runProgress.damageCloakReadyAt-1e-9&&n>getMaxHealth()*.2){n=getMaxHealth()*.2;runProgress.damageCloakReadyAt=elapsed+3;showNotice('免伤之衣 · 重击已限制',1);}
  const blocked=Math.min(shieldState.value,n);shieldState.value-=blocked;
  if(runProgress.fireShield){shieldState.regenStart=shieldState.value;shieldState.regenElapsed=0;shieldState.lastHitAt=elapsed;}
  player.hp=healthAfterDamage(player.hp,n-blocked);damageFlash=blocked>=n?.12:.55;
- if(player.hp<=0&&runProgress.lastStand&&!runProgress.lastStandUsed){runProgress.lastStandUsed=true;player.hp=getMaxHealth()*.5;clearBleeding();showNotice('名刀司命 · 免死并恢复 50% 生命',3);tone(760,.3,'sine',.05,300);}
+ if(player.hp<=0&&runProgress.lastStand&&elapsed>=runProgress.lastStandReadyAt-1e-9){runProgress.lastStandUsed=true;runProgress.lastStandReadyAt=elapsed+90;player.hp=getMaxHealth()*.5;clearBleeding();showNotice('名刀司命 · 免死并恢复 50% 生命',3);tone(760,.3,'sine',.05,300);}
  tone(blocked>0?190:65,.2,'triangle',blocked>0?.04:.075,-20);if(player.hp<=0)end(false);return true;
 }
 function bleedRemaining(){return player?Math.max(0,player.bleedUntil-elapsed):0;}
@@ -1131,7 +1136,7 @@ function castFreezeSkill(){
 function updateDefenseHUD(){
  const items=[`闪避 ${Math.round(getDodgeChance()*100)}% / ${Math.round(getDodgeCap()*100)}%`];
  if(runProgress.damageCloak)items.push(`免伤衣 ${Math.max(0,runProgress.damageCloakReadyAt-elapsed)>0?Math.ceil(runProgress.damageCloakReadyAt-elapsed)+'s':'就绪'}`);
- if(runProgress.lastStand)items.push(`名刀 ${runProgress.lastStandUsed?'已使用':'可免死'}`);
+ if(runProgress.lastStand)items.push(`名刀 ${elapsed>=runProgress.lastStandReadyAt-1e-9?'就绪':Math.ceil(runProgress.lastStandReadyAt-elapsed)+'s'}`);
  if(runProgress.healthConverter)items.push(`转换 ${runProgress.converterKills%15}/15`);
  setHudText('defenseStatus',items.join(' · '));setHudClass('defenseStatus','hidden',!player||state==='menu');
 }
@@ -1264,13 +1269,14 @@ function explodeWitchPotion(potion){
  if(state!=='playing'||potion.exploded)return;potion.exploded=true;
  if(potion.kind&&potion.kind!=='damage')return;
  const splash={x:potion.x,y:potion.y,z:potion.z,age:0,life:.65,radius:WITCH_POTION_RADIUS,kind:'damage'};
- if(witchSplashes.length>=24)witchSplashes.shift();witchSplashes.push(splash);
- tone(520,.16,'triangle',.035,-350);
  const clearTo=target=>{
   const delta=sub(target,splash),distance=length(delta);
   return Math.hypot(delta.x,delta.z)<=WITCH_POTION_RADIUS&&Math.abs(delta.y)<=WITCH_POTION_RADIUS&&(distance<1e-8||wallDistance(splash,norm(delta))>distance-1e-6);
  };
- if(player?.hp>0&&clearTo(V(player.x,player.y-.3,player.z)))damage(WITCH_POTION_DAMAGE*(potion.damageScale??1));
+ const hitsPlayer=player?.hp>0&&clearTo(V(player.x,player.y-.3,player.z));
+ if(hitsPlayer&&blockIncomingProjectile()){burst(potion.x,potion.y,potion.z,[1,.65,.12],12);return;}
+ if(witchSplashes.length>=24)witchSplashes.shift();witchSplashes.push(splash);tone(520,.16,'triangle',.035,-350);
+ if(hitsPlayer)damage(WITCH_POTION_DAMAGE*(potion.damageScale??1));
 }
 function updateWitchPotions(dt){
  if(state!=='playing'||isEnemyFrozen()||dt<=0)return;
@@ -1627,7 +1633,7 @@ function updateEnemyCombat(dt,moveScale){
   const delta=sub(b,old),step=length(delta),direction=norm(delta),wallHit=wallDistance(old,direction),hitWall=wallHit<=step;
   const playerCenter=V(player.x,player.y-.3,player.z),oc=sub(old,playerCenter),projection=dot(oc,direction),disc=projection*projection-dot(oc,oc)+.55*.55;
   const contact=disc>=0?Math.max(0,-projection-Math.sqrt(disc)):Infinity,intersects=disc>=0&&(-projection+Math.sqrt(disc))>=0;
-  if(intersects&&contact<=step&&contact<wallHit){damage((b.baseDamage??(difficulty==='easy'?6:difficulty==='hard'?14:9))*(b.damageScale??1));bullets.splice(i,1);if(state!=='playing')return;}
+  if(intersects&&contact<=step&&contact<wallHit){damage((b.baseDamage??(difficulty==='easy'?6:difficulty==='hard'?14:9))*(b.damageScale??1),{projectile:true});bullets.splice(i,1);if(state!=='playing')return;}
   else if(b.life<=0||hitWall){if(hitWall)burst(old.x+direction.x*wallHit,old.y+direction.y*wallHit,old.z+direction.z*wallHit,[1,.75,.28],5);bullets.splice(i,1);}
  }
 }
@@ -3078,7 +3084,7 @@ window.screen?.orientation?.addEventListener?.('change',syncMobileOrientation);
 matchMedia('(pointer:coarse)').addEventListener?.('change',syncMobileOrientation);
 syncMobileOrientation();
 // Read-only diagnostics for validating the playable state.
-window.gameStatus=()=>({state,mode:'endless',level:runProgress.level,xp:runProgress.xp,xpNext:nextLevelXP(),maxHealth:getMaxHealth(),bulletDamage:getBulletDamage(),damageBonus:runProgress.damageBonus,reloadSpeedBonus:runProgress.reloadRanks*.1,bulletHealPercent:runProgress.leechLevel*30,freezeRanks:runProgress.freezeRanks,freezeDuration:getFreezeDurations().freeze,slowDuration:getFreezeDurations().slow,freezeRemaining:freezeSkill.freezeRemaining,slowRemaining:freezeSkill.slowRemaining,freezeCooldown:freezeSkill.cooldownRemaining,freezeCasts:freezeSkill.casts,enemyCap:getEnemyCap(),fireBullets:runProgress.fireBullets,fireShield:runProgress.fireShield,shield:shieldState.value,maxShield:getMaxShield(),bossChests:bossChests.length,chestRewardPending,bossSpawned:bossState.spawned,bossDefeated:bossState.defeated,smallEnemyKills,bossHealthScaling:getBossHealthScaling(),flameLinks:flameLinks.length,enemyScaling:getEnemyScaling(),enemyDamageScaling:getEnemyDamageScaling(),dodgeChance:getDodgeChance(),dodgeCap:getDodgeCap(),damageCloak:runProgress.damageCloak,damageCloakCooldown:Math.max(0,runProgress.damageCloakReadyAt-elapsed),lastStand:runProgress.lastStand,lastStandUsed:runProgress.lastStandUsed,healthConverter:runProgress.healthConverter,converterKills:runProgress.converterKills,burningEnemies:enemies.filter(e=>e.burning).length,upgradeChoices:runProgress.choices.slice(),survivalTime:elapsed,spawnInterval:getSpawnInterval(),spawned,map:currentMap.id,mapName:currentMap.name,wave,health:player?.hp,bleeding:bleedRemaining()>0,bleedRemaining:bleedRemaining(),ammo,reserve,enemies:enemies.length,witchPotions:witchPotions.length,witchSplashes:witchSplashes.length,enemyTypes:{milk:enemies.filter(e=>enemyKind(e)==='milk').length,dog:enemies.filter(e=>enemyKind(e)==='dog').length,witch:enemies.filter(e=>enemyKind(e)==='witch').length,boss:enemies.filter(e=>enemyKind(e)==='boss').length},score,kills,shots,hits,headshots,headshotKills,elapsed,weapon:activeWeapon,previousWeapon,switchingWeapon:!!weaponSwitch,weaponSwitchProgress:weaponSwitch?weaponSwitch.elapsed/WEAPON_SWITCH_DURATION:0,knifeAttackProgress:knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0,knifeSwings,knifeHits,recoilShot,lastRecoilDegrees:{yaw:lastRecoilYaw*180/Math.PI,pitch:lastRecoilPitch*180/Math.PI},recoilOffsetDegrees:{yaw:recoilYaw*180/Math.PI,pitch:recoilPitch*180/Math.PI},horizontalSpeed:player?.horizontalSpeed||0,accuracyThreshold:ACCURACY_SPEED_THRESHOLD,spreadDegrees:getShotSpread()*180/Math.PI,accurate:!!player&&getShotSpread()===0,crouching:player?.crouching||false,height:player?.eyeHeight,position:player?{x:player.x,y:player.y,z:player.z}:null,webgl:!!gl});
+window.gameStatus=()=>({state,mode:'endless',level:runProgress.level,xp:runProgress.xp,xpNext:nextLevelXP(),maxHealth:getMaxHealth(),bulletDamage:getBulletDamage(),damageBonus:runProgress.damageBonus,reloadSpeedBonus:runProgress.reloadRanks*.1,bulletHealPercent:runProgress.leechLevel*30,freezeRanks:runProgress.freezeRanks,freezeDuration:getFreezeDurations().freeze,slowDuration:getFreezeDurations().slow,freezeRemaining:freezeSkill.freezeRemaining,slowRemaining:freezeSkill.slowRemaining,freezeCooldown:freezeSkill.cooldownRemaining,freezeCasts:freezeSkill.casts,enemyCap:getEnemyCap(),fireBullets:runProgress.fireBullets,fireShield:runProgress.fireShield,shield:shieldState.value,maxShield:getMaxShield(),bossChests:bossChests.length,chestRewardPending,bossSpawned:bossState.spawned,bossDefeated:bossState.defeated,smallEnemyKills,bossHealthScaling:getBossHealthScaling(),flameLinks:flameLinks.length,enemyScaling:getEnemyScaling(),enemyDamageScaling:getEnemyDamageScaling(),dodgeChance:getDodgeChance(),dodgeCap:getDodgeCap(),damageCloak:runProgress.damageCloak,damageCloakCooldown:Math.max(0,runProgress.damageCloakReadyAt-elapsed),lastStand:runProgress.lastStand,lastStandUsed:runProgress.lastStandUsed,lastStandCooldown:Math.max(0,runProgress.lastStandReadyAt-elapsed),projectileBlockChance:runProgress.fireShield?.5:0,healthConverter:runProgress.healthConverter,converterKills:runProgress.converterKills,burningEnemies:enemies.filter(e=>e.burning).length,upgradeChoices:runProgress.choices.slice(),survivalTime:elapsed,spawnInterval:getSpawnInterval(),spawned,map:currentMap.id,mapName:currentMap.name,wave,health:player?.hp,bleeding:bleedRemaining()>0,bleedRemaining:bleedRemaining(),ammo,reserve,enemies:enemies.length,witchPotions:witchPotions.length,witchSplashes:witchSplashes.length,enemyTypes:{milk:enemies.filter(e=>enemyKind(e)==='milk').length,dog:enemies.filter(e=>enemyKind(e)==='dog').length,witch:enemies.filter(e=>enemyKind(e)==='witch').length,boss:enemies.filter(e=>enemyKind(e)==='boss').length},score,kills,shots,hits,headshots,headshotKills,elapsed,weapon:activeWeapon,previousWeapon,switchingWeapon:!!weaponSwitch,weaponSwitchProgress:weaponSwitch?weaponSwitch.elapsed/WEAPON_SWITCH_DURATION:0,knifeAttackProgress:knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0,knifeSwings,knifeHits,recoilShot,lastRecoilDegrees:{yaw:lastRecoilYaw*180/Math.PI,pitch:lastRecoilPitch*180/Math.PI},recoilOffsetDegrees:{yaw:recoilYaw*180/Math.PI,pitch:recoilPitch*180/Math.PI},horizontalSpeed:player?.horizontalSpeed||0,accuracyThreshold:ACCURACY_SPEED_THRESHOLD,spreadDegrees:getShotSpread()*180/Math.PI,accurate:!!player&&getShotSpread()===0,crouching:player?.crouching||false,height:player?.eyeHeight,position:player?{x:player.x,y:player.y,z:player.z}:null,webgl:!!gl});
 gl.enable(gl.DEPTH_TEST);gl.clearColor(.35,.45,.48,1);
 let fpsStart=null,fpsFrames=0,fpsMode=null;
 function updateFPS(now){
