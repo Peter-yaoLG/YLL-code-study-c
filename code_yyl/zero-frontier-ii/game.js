@@ -350,7 +350,7 @@ let spawned=0,nextEnemyId=0,spawnTimer=0;
 const bossState={spawned:false,defeated:false,enemyId:null,count:0,nextLevel:20};
 let bossSpawnRetry=0;
 let smallEnemyKills=0;
-function getBossHealthScaling(){return 1+Math.floor(smallEnemyKills/20)*.2;}
+function getBossHealthScaling(){return 1+Math.floor(runProgress.level/5)*.2;}
 const freezeSkill={cooldownRemaining:0,freezeRemaining:0,slowRemaining:0,casts:0,frozenAt:0};
 const freezeFrame={activeDt:0,slowDt:0,normalDt:0};
 let enemyStepMoveScale=null;
@@ -446,8 +446,10 @@ function openLevelUpgrade(){
 }
 function awardEnemyExperience(kind){
  if(state!=='playing')return;
+ const previousBossScale=getBossHealthScaling();
  runProgress.xp+=ENEMY_XP[kind]||0;
  while(runProgress.xp>=nextLevelXP()){runProgress.xp-=nextLevelXP();runProgress.level++;if(runProgress.level%2===0)runProgress.pendingLevels.push(runProgress.level);}
+ if(getBossHealthScaling()!==previousBossScale)rescaleEnemies();
  if(runProgress.pendingLevels.length){if(!xpAwardDeferral)openLevelUpgrade();}else updateProgressHUD();
 }
 function chooseLevelUpgrade(index){
@@ -971,7 +973,7 @@ function defeatEnemy(target,headshot=false){
  recordEnemyDeath(target);enemies.splice(index,1);
  if(kind==='witch'){enemyNavigation.grids.delete('witch-follow-'+target.id);refreshEnemySupport();}
  if(headshot)playHeadshotKillSound();else tone(210,.22,'sawtooth',.035,-140);
- if(kills%20===0||(!boss&&smallEnemyKills%20===0))rescaleEnemies();awardEnemyExperience(kind);
+ if(kills%20===0)rescaleEnemies();awardEnemyExperience(kind);
 }
 function swingKnife(){
  if(state!=='playing'||activeWeapon!=='knife'||weaponSwitch||knifeAttackTimer>0)return;
@@ -1143,10 +1145,11 @@ function updateHUD(){updateDefenseHUD();
  setHudText('health',Math.ceil(player.hp));setHudStyle('healthFill','width',clamp(player.hp/getMaxHealth()*100,0,100)+'%');setHudStyle('healthFill','background',player.hp<getMaxHealth()*.3?'#ff6767':'');setHudText('ammo',knife?'∞':String(ammo).padStart(2,'0'));setHudText('reserve',String(reserve).padStart(3,'0'));setHudText('wave','无尽');setHudText('remaining',String(enemies.length).padStart(2,'0'));setHudText('score',String(score).padStart(5,'0'));setHudText('timer',formatTime(elapsed));setHudClass('reloadBar','hidden',reload<=0);setHudStyle('reloadFill','width',clamp(Math.round((1-reload/getReloadDuration())*100),0,100)+'%');}
 const DOG_WINDUP=.16,DOG_STRIKE=.08,DOG_RECOVER=.24,DOG_HIT_TIME=.0175,DOG_ATTACK_RANGE=2.22,DOG_HIT_RANGE=2.34;
 const MILK_CHARGE=.24,MILK_RELEASE=.20,MILK_ORB_SPEED=35,MILK_ATTACK_RATE=1.5;
-const MILK_BURST_INTERVAL=.12,MILK_BURST_COUNT=3,MILK_BURST_SPAN=MILK_BURST_INTERVAL*(MILK_BURST_COUNT-1);
+const MILK_BURST_INTERVAL=.12;
+function getMilkBurstCount(){return runProgress.level>=20?3:runProgress.level>=10?2:1;}
 const BOSS_FIREBALL_WINDUP=.9,BOSS_FIREBALL_RECOVER=.45,BOSS_FIREBALL_CYCLE=4.5,BOSS_FIREBALL_SPEED=22;
 const BOSS_BREATH_WINDUP=1.1,BOSS_BREATH_RECOVER=.55,BOSS_BREATH_CYCLE=5,BOSS_BREATH_RANGE=7,BOSS_BREATH_HALF_ANGLE=35*Math.PI/180;
-const WITCH_POTION_RANGE=16,WITCH_POTION_RADIUS=3,WITCH_POTION_DAMAGE=30;
+const WITCH_POTION_RANGE=16,WITCH_POTION_RADIUS=3,WITCH_POTION_DAMAGE=15;
 const WITCH_POTION_WINDUP=.4,WITCH_POTION_RECOVER=.3,WITCH_POTION_CYCLE=4.2,WITCH_POTION_GRAVITY=14,WITCH_POTION_SIZE=.12;
 const WITCH_SUPPORT_RADIUS=7,WITCH_ATTACK_RATE=1.2;
 const WITCH_REVIVAL_WINDOW=5,WITCH_REVIVAL_CHANCE=.3,WITCH_REVIVAL_HEALTH=.5;
@@ -1510,6 +1513,7 @@ function launchMilkOrb(enemy){
 }
 function updateMilkEnemy(enemy,dt){
  if(isEnemyFrozen()||dt<=0)return;
+ const burstCount=enemy.castBurstCount??getMilkBurstCount(),burstSpan=MILK_BURST_INTERVAL*(burstCount-1);
  const attackDt=dt*(enemy.supported?WITCH_ATTACK_RATE:1);
  const dx=player.x-enemy.x,dz=player.z-enemy.z;enemy.yaw=Math.atan2(dx,dz);
  if(enemy.casting){
@@ -1518,18 +1522,18 @@ function updateMilkEnemy(enemy,dt){
    enemy.castTimer-=MILK_CHARGE;enemy.castPhase='release';enemy.castShots=0;
   }
   if(enemy.castPhase==='release'){
-   while((enemy.castShots||0)<MILK_BURST_COUNT&&enemy.castTimer>=(enemy.castShots||0)*MILK_BURST_INTERVAL-1e-9){enemy.castShots=(enemy.castShots||0)+1;launchMilkOrb(enemy);}
-   if(enemy.castTimer>=MILK_BURST_SPAN+MILK_RELEASE-1e-9){enemy.casting=false;enemy.castPhase='idle';enemy.castTimer=0;enemy.castProgress=0;return;}
+   while((enemy.castShots||0)<burstCount&&enemy.castTimer>=(enemy.castShots||0)*MILK_BURST_INTERVAL-1e-9){enemy.castShots=(enemy.castShots||0)+1;launchMilkOrb(enemy);}
+   if(enemy.castTimer>=burstSpan+MILK_RELEASE-1e-9){enemy.casting=false;enemy.castPhase='idle';enemy.castTimer=0;enemy.castProgress=0;return;}
   }
-  enemy.castProgress=enemy.castPhase==='charge'?clamp(enemy.castTimer/MILK_CHARGE,0,1):1-clamp(enemy.castTimer/(MILK_BURST_SPAN+MILK_RELEASE),0,1);return;
+  enemy.castProgress=enemy.castPhase==='charge'?clamp(enemy.castTimer/MILK_CHARGE,0,1):1-clamp(enemy.castTimer/(burstSpan+MILK_RELEASE),0,1);return;
  }
  enemyWalk(enemy,dt,(difficulty==='hard'?1.8:1.15)+wave*.16,5);
  enemy.attack-=attackDt;
  if(enemy.attack<=0&&Math.hypot(player.x-enemy.x,player.z-enemy.z)<30&&visible(enemy,player)){
-  enemy.casting=true;enemy.castPhase='charge';enemy.castTimer=0;enemy.castProgress=0;enemy.castShots=0;enemy.walking=false;
+  enemy.casting=true;enemy.castPhase='charge';enemy.castTimer=0;enemy.castProgress=0;enemy.castShots=0;enemy.castBurstCount=getMilkBurstCount();enemy.walking=false;
   // Speed up the complete firing cycle while preserving the visible cast animation.
   const baseCooldown=(difficulty==='hard'?1.25:difficulty==='easy'?2.8:2.05)+rnd(0,.7);
-  enemy.attack=(baseCooldown+MILK_CHARGE+MILK_RELEASE)/MILK_ATTACK_RATE-MILK_CHARGE-MILK_RELEASE-MILK_BURST_SPAN;
+  enemy.attack=(baseCooldown+MILK_CHARGE+MILK_RELEASE)/MILK_ATTACK_RATE-MILK_CHARGE-MILK_RELEASE-MILK_BURST_INTERVAL*(enemy.castBurstCount-1);
  }
 }
 function cancelMilkBursts(){for(const enemy of enemies)if(enemyKind(enemy)==='milk'&&enemy.casting){enemy.casting=false;enemy.castPhase='idle';enemy.castTimer=0;enemy.castProgress=0;enemy.castShots=0;}}
