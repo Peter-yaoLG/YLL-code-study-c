@@ -1624,7 +1624,7 @@ function strikeBossBreath(enemy){
  tone(95,.28,'sawtooth',.035,-45);
 }
 const doubaoAdd=(a,b)=>V(a.x+b.x,a.y+b.y,a.z+b.z),doubaoMul=(a,n)=>V(a.x*n,a.y*n,a.z*n);
-function doubaoEyeOrigin(e,side){const sn=Math.sin(e.yaw),cs=Math.cos(e.yaw);return V(e.x+side*.24*cs+.54*sn,e.y+3.25,e.z-side*.24*sn+.54*cs);}
+function doubaoEyeOrigin(e,side){const sn=Math.sin(e.yaw),cs=Math.cos(e.yaw);return V(e.x+side*.195*cs+.535*sn,e.y+3.27,e.z-side*.195*sn+.535*cs);}
 function launchDoubaoOrbs(e){
  const from=doubaoEyeOrigin(e,0),target=V(player.x,player.y-.3,player.z);if(!visible(from,target))return;
  const aim=norm(sub(target,from)),baseDamage=(difficulty==='easy'?6:difficulty==='hard'?14:9)*1.5;
@@ -1669,18 +1669,33 @@ function prepareDoubaoModel(){
  milkEllipsoid(data,0,1.82,0,.65,.92,.4,dark,18,10);
  for(const side of [-1,1]){milkEllipsoid(data,side*.29,.65,0,.23,.65,.24,[.09,.11,.14],12,8);milkEllipsoid(data,side*.29,.15,.12,.28,.15,.43,dark,12,8);milkEllipsoid(data,side*.72,1.89,0,.18,.75,.19,skin,12,8);milkEllipsoid(data,side*.74,1.2,.06,.18,.24,.18,skin,12,8);}
  milkEllipsoid(data,0,2.63,0,.2,.3,.19,skin,12,8);
- milkEllipsoid(data,0,3.24,-.035,.75,.83,.64,hair,24,16);
- milkEllipsoid(data,0,3.19,.18,.6,.65,.44,skin,24,16);
- for(const side of [-1,1]){
-  milkEllipsoid(data,side*.64,3.04,.01,.18,.72,.37,hair,14,10);
-  milkEllipsoid(data,side*.235,3.25,.565,.16,.145,.042,[.99,.96,.92],16,10);
-  milkEllipsoid(data,side*.235,3.25,.606,.083,.098,.032,[.22,.105,.04],14,10);
-  milkEllipsoid(data,side*.235,3.25,.638,.041,.066,.014,[.025,.018,.016],12,8);
-  milkEllipsoid(data,side*.215,3.29,.651,.024,.024,.012,[1,1,1],10,6);
-  box(data,side*.24,3.48,.54,.23,.035,.05,hair);
+ // A single smooth bob shell replaces the separate bulb-shaped hair pieces.
+ milkEllipsoid(data,0,3.24,.07,.53,.66,.46,[.94,.76,.64],32,24);
+ const faceFront=(x,y)=>.07+.46*Math.sqrt(Math.max(0,1-(x/.53)**2-((y-3.24)/.66)**2));
+ const hairPoint=(angle,t,inner=false)=>{
+  const front=Math.max(0,Math.cos(angle)),limit=2.32-1.14*Math.pow(front,3),theta=t*limit;
+  const rx=inner?.592:.635,ry=inner?.718:.76,rz=inner?.477:.515;
+  return [rx*Math.sin(theta)*Math.sin(angle),3.30+ry*Math.cos(theta),rz*Math.sin(theta)*Math.cos(angle)-.035];
+ };
+ for(let i=0;i<48;i++)for(let j=0;j<24;j++){
+  const a=i*Math.PI/24,b=(i+1)*Math.PI/24,p0=hairPoint(a,j/24),p1=hairPoint(b,j/24),p2=hairPoint(b,(j+1)/24),p3=hairPoint(a,(j+1)/24);
+  const sheen=.035+.017*Math.max(0,Math.cos(a+.9)),c=[sheen*1.2,sheen,.025];bossTriangle(data,p0,p1,p2,c);bossTriangle(data,p0,p2,p3,c);
+  if(j===23){const innerA=hairPoint(a,1,true),innerB=hairPoint(b,1,true);bossTriangle(data,p3,p2,innerB,hair);bossTriangle(data,p3,innerB,innerA,hair);}
  }
- milkEllipsoid(data,0,3.08,.62,.065,.11,.065,skin,12,8);milkEllipsoid(data,0,2.91,.55,.13,.031,.026,[.53,.24,.21],12,6);
- for(let i=0;i<6;i++)milkEllipsoid(data,-.45+i*.18,3.69,.23,.19,.28,.38,hair,12,8);
+ for(const side of [-1,1]){
+  const x=side*.195,y=3.27,z=faceFront(x,y);
+  milkEllipsoid(data,x,y,z+.009,.115,.076,.017,[.99,.97,.94],20,12);
+  milkEllipsoid(data,x,y+.001,z+.025,.048,.057,.012,[.28,.145,.071],18,12);
+  milkEllipsoid(data,x,y+.001,z+.036,.024,.041,.007,[.034,.025,.021],16,10);
+  milkEllipsoid(data,x-side*.016,y+.025,z+.043,.012,.012,.005,[1,.99,.93],12,8);
+  // Fine upper lids and gently curved brows keep the eyes inset in the face.
+  for(let i=0;i<12;i++){const t=i/11,dx=(t-.5)*.225,ey=y+.058*Math.sin(t*Math.PI);milkEllipsoid(data,x+dx,ey,faceFront(x+dx,ey)+.027,.014,.009,.006,hair,8,6);}
+  for(let i=0;i<10;i++){const t=i/9,bx=x+(t-.5)*.215,by=3.425+.018*Math.sin(t*Math.PI);milkEllipsoid(data,bx,by,faceFront(bx,by)+.012,.018,.01,.006,[.14,.087,.052],8,6);}
+  const cheekX=side*.31,cheekY=3.105;milkEllipsoid(data,cheekX,cheekY,faceFront(cheekX,cheekY)+.003,.095,.04,.008,[.91,.64,.55],16,10);
+  milkEllipsoid(data,side*.515,3.15,.045,.053,.12,.079,skin,14,10);
+ }
+ milkEllipsoid(data,0,3.16,faceFront(0,3.16)+.005,.043,.078,.043,[.93,.73,.60],18,12);
+ for(let i=0;i<16;i++){const t=i/15,x=(t-.5)*.19,y=3.005-.018*Math.sin(t*Math.PI);milkEllipsoid(data,x,y,faceFront(x,y)+.009,.012,.006,.006,[.60,.31,.27],8,6);}
  for(const x of [-.27,.27])for(const y of [1.55,1.85,2.15])box(data,x,y,.39,.04,.04,.025,[.72,.76,.8],.2);
  doubaoGpu=mesh(data);const orb=[];milkEllipsoid(orb,0,0,0,.14,.14,.14,[1,.075,.035],12,8);for(let i=9;i<orb.length;i+=10)orb[i]=1.5;doubaoOrbGpu=mesh(orb);
  const rings=[];for(let plane=0;plane<2;plane++)for(let i=0;i<24;i++){const a=i*Math.PI/12,b=(i+1)*Math.PI/12,point=(angle,r)=>plane?[Math.sin(angle)*r,Math.cos(angle)*r,0]:[Math.sin(angle)*r,0,Math.cos(angle)*r],pts=[point(a,.177),point(a,.203),point(b,.203),point(b,.177)];for(const k of [0,1,2,0,2,3])rings.push(...pts[k],0,1,0,1,.3,.08,1.5);}doubaoOrbRingGpu=mesh(rings);
