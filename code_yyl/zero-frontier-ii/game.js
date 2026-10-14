@@ -445,7 +445,7 @@ function upgradeDescription(id){
   case 'health':return {title:'体能强化',text:`生命上限 +${20*gain}：${getMaxHealth()} → ${getMaxHealth()+20*gain}，同时恢复 ${20*gain} 点生命，无上限。`};
   case 'damage':return {title:'伤害强化',text:`枪械与近战伤害加成 +${20*gain}%：${percent}% → ${percent+20*gain}%，无上限。`};
   case 'dodge':return {title:'灵巧闪避',text:`闪避概率 +5%：${Math.round(getDodgeChance()*100)}% → ${Math.round(Math.min(getDodgeCap(),getDodgeChance()+.05)*100)}%。上限 ${Math.round(getDodgeCap()*100)}%，闪避成功不受本次伤害。`};
-  case 'leech':return {title:'子弹汲取',text:`按子弹实际造成伤害的 ${(runProgress.leechLevel+gain)*30}% 回血。本次强化增加 ${30*gain} 个百分点，爆头也生效。`};
+  case 'leech':return {title:'子弹汲取',text:`按子弹实际造成伤害的 ${(runProgress.leechLevel+1)*30}% 回血。每次强化固定增加30个百分点，不随等级翻倍，爆头也生效。`};
   case 'majorDamage':return {title:'火力突破',text:`枪械与近战伤害加成 +${30*gain}%：${percent}% → ${percent+30*gain}%，无上限。`};
   case 'majorHealth':return {title:'生命突破',text:`生命上限 +${50*gain}：${getMaxHealth()} → ${getMaxHealth()+50*gain}，同时恢复 ${50*gain} 点生命，无上限。`};
   case 'freeze':return {title:'极寒延伸',text:`冰冻 ${3+runProgress.freezeRanks} → ${3+runProgress.freezeRanks+gain} 秒，后续减速 ${2+runProgress.freezeRanks*2} → ${2+(runProgress.freezeRanks+gain)*2} 秒。减速 50%，冷却 25 秒，可重复强化。`};
@@ -488,7 +488,7 @@ function chooseLevelUpgrade(index){
  else if(id==='health'||id==='majorHealth'){const gain=(id==='health'?20:50)*getUpgradeMultiplier();runProgress.maxHealthBonus+=gain;player.hp=Math.min(getMaxHealth(),player.hp+gain);}
  else if(id==='damage'||id==='majorDamage')runProgress.damageBonus=Math.round((runProgress.damageBonus+(id==='damage'?.2:.3)*getUpgradeMultiplier())*100)/100;
  else if(id==='dodge')runProgress.dodgeRanks++;
- else if(id==='leech')runProgress.leechLevel+=getUpgradeMultiplier();
+ else if(id==='leech')runProgress.leechLevel++;
  else if(id==='freeze')runProgress.freezeRanks+=getUpgradeMultiplier();
  else if(id==='majorBullet')runProgress.bulletBaseBonus+=getBulletUpgradeGain(id);
  else if(id==='shieldUpgrade'){const gain=30*getUpgradeMultiplier();runProgress.shieldBonus+=gain;shieldState.value=Math.min(getMaxShield(),shieldState.value+gain);shieldState.regenStart=shieldState.value;shieldState.regenElapsed=0;}
