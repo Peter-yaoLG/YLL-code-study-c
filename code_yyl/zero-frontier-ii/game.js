@@ -349,7 +349,7 @@ const ENEMY_GAP=1;
 let spawned=0,nextEnemyId=0,spawnTimer=0;
 const bossState={spawned:false,defeated:false,enemyId:null,count:0,nextLevel:20};
 let bossSpawnRetry=0;
-const encounterState={dog:false,witch:false,doubaoSpawned:false,level40Health:7800};
+const encounterState={dog:false,witch:false,doubaoSpawned:false,level40Health:20800};
 const playerTrail=[];
 const DOUBAO_HIT_ZONES=[[0,3.22,.06,.65,'head'],[0,1.85,0,.85,'body'],[0,.72,0,.65,'body']];
 function showEncounter(title,description){
@@ -419,12 +419,12 @@ function collectUpgradeReward(){runProgress.pendingLevels.push({level:runProgres
 function getReloadDuration(){return 1.65/(1+runProgress.reloadRanks*.1);}
 function getEnemyCap(){return ENDLESS_ENEMY_CAP+Math.floor(runProgress.level/10);}
 function getSmallEnemyCount(){return enemies.filter(enemy=>enemyKind(enemy)!=='boss').length;}
-function getEnemyScaling(){return 1+Math.floor(kills/20)*.15;}
-function getEnemyDamageScaling(){return 1+Math.floor(kills/20)*.07;}
+function getEnemyScaling(){return 1+Math.floor(kills/15)*.15;}
+function getEnemyDamageScaling(){return 1+Math.floor(kills/15)*.07;}
 function healthAfterDamage(health,amount){const remaining=health-amount;return remaining<=1e-9?0:remaining;}
 function healFromBullet(dealtDamage){if(player&&player.hp>0&&runProgress.leechLevel>0&&dealtDamage>0)player.hp=Math.min(getMaxHealth(),player.hp+dealtDamage*.3*runProgress.leechLevel);}
 function resetRunProgress(){
- stopMenuMusic();stopBossMusic();smallEnemyKills=0;Object.assign(encounterState,{dog:false,witch:false,doubaoSpawned:false,level40Health:7800});playerTrail.length=0;$('encounterMenu').classList.add('hidden');
+ stopMenuMusic();stopBossMusic();smallEnemyKills=0;Object.assign(encounterState,{dog:false,witch:false,doubaoSpawned:false,level40Health:20800});playerTrail.length=0;$('encounterMenu').classList.add('hidden');
  Object.assign(runProgress,{level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,lastStandReadyAt:0,healthConverter:false,converterKills:0,damageCloakReadyAt:0});
  bossChests.length=0;chestRewardPending=false;Object.assign(shieldState,{value:0,regenStart:0,regenElapsed:0,lastHitAt:-Infinity});$('chestMenu').classList.add('hidden');
  xpAwardDeferral=0;flameLinks.length=0;
@@ -717,7 +717,7 @@ function playHeadshotSound(){playCombatBuffer('head',.47,0);}
 function playHeadshotKillSound(){playCombatBuffer('headKill',.44,0);}
 
 function showNotice(txt,duration=2.4){$('notice').textContent=txt;noticeTimer=duration;$('notice').classList.add('visible');}
-function getBaseEnemyHealth(type){return type==='doubao'?2*encounterState.level40Health:type==='boss'?2000*Math.pow(1.5,bossState.count):type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
+function getBaseEnemyHealth(type){return type==='doubao'?2*encounterState.level40Health:type==='boss'?2000*Math.pow(4,bossState.count):type==='dog'?(difficulty==='easy'?18:24):type==='witch'?(difficulty==='easy'?6:difficulty==='hard'?10:8):(difficulty==='easy'?2:3);}
 function createEnemy(type,x,z,id){
  if(!ENEMY_TYPES[type])type='milk';
  const dog=type==='dog',initialDelay=rnd(1.8,3),baseMaxHp=getBaseEnemyHealth(type),enemyScale=type==='doubao'?1:type==='boss'?getBossHealthScaling():getEnemyScaling(),maxHp=baseMaxHp*enemyScale,damageScale=getEnemyDamageScaling();
@@ -1035,7 +1035,7 @@ function defeatEnemy(target,headshot=false){
  recordEnemyDeath(target);enemies.splice(index,1);
  if(kind==='witch'){enemyNavigation.grids.delete('witch-follow-'+target.id);refreshEnemySupport();}
  if(headshot)playHeadshotKillSound();else tone(210,.22,'sawtooth',.035,-140);
- if(kills%20===0)rescaleEnemies();awardEnemyExperience(kind);
+ if(kills%15===0)rescaleEnemies();awardEnemyExperience(kind);
 }
 function swingKnife(){
  if(state!=='playing'||activeWeapon!=='knife'||weaponSwitch||knifeAttackTimer>0)return;
@@ -1196,6 +1196,7 @@ function updateDefenseHUD(){
  setHudText('defenseStatus',items.join(' · '));setHudClass('defenseStatus','hidden',!player||state==='menu');
 }
 function updateHUD(){updateDefenseHUD();
+ const bulletDamage=getBulletDamage();setHudText('bulletDamageValue',Math.round(bulletDamage*100)/100);setHudText('headDamageValue',Math.round(getBulletDamage(true)*100)/100);setHudClass('bulletDamagePanel','hidden',activeWeapon!=='ak');
  updateFreezeHUD();
  const boss=enemies.find(enemy=>enemyKind(enemy)==='boss'&&enemy.hp>0);setHudText('bossHealthName',boss?.type==='doubao'?'豆包 · 关卡大 Boss':'大火龙奶娃');setHudClass('bossHealthPanel','hidden',!boss);
  if(boss){setHudText('bossHealthValue',Math.ceil(boss.hp));setHudText('bossHealthMax',Math.ceil(boss.maxHp));setHudStyle('bossHealthFill','width',clamp(boss.hp/boss.maxHp*100,0,100)+'%');}

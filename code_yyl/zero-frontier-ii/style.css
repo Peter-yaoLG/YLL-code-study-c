@@ -328,3 +328,5 @@ body.touch-layout .chest-choice.upgrade-choice{min-height:0;padding:8px}
 
 .menu-surprise{position:absolute;left:61%;top:55%;font-size:clamp(22px,2.7vw,36px);font-weight:700;color:#d5fa52;white-space:nowrap;letter-spacing:3px;text-shadow:0 2px 18px #000a;cursor:pointer;z-index:4}body.touch-layout .menu-surprise{left:56%;top:48%;font-size:clamp(15px,calc(var(--game-width)*.027),23px);letter-spacing:1px}body.touch-layout.mobile-narrow .menu-surprise{font-size:15px;left:54%}
 body.touch-layout .menu-surprise,body.touch-layout.mobile-narrow .menu-surprise{left:50%;top:42px;transform:translateX(-50%);font-size:16px;letter-spacing:1px}
+
+.bullet-damage-panel{display:flex;justify-content:flex-end;gap:6px;align-items:baseline;font-size:11px;color:#c4d4b9;margin:5px 0 3px;letter-spacing:.4px}.bullet-damage-panel strong{color:#d5fa52;font-family:Consolas,monospace;font-weight:500}body.touch-layout .bullet-damage-panel{font-size:9px;gap:4px;margin:3px 0 1px;letter-spacing:0}
