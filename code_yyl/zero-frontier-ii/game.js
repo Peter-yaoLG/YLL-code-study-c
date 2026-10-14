@@ -345,6 +345,7 @@ const mini=$('minimap').getContext('2d');
 let state='menu',player, enemies=[],bullets=[],particles=[],pickups=[],wave=1,score=0,kills=0,shots=0,hits=0,elapsed=0,ammo=30,reserve=180,reload=0,cooldown=0,transition=0,time=0,last=performance.now(),shotFlash=0,hitFlash=0,damageFlash=0,bob=0,kick=0,noticeTimer=0,moveAmount=0;
 const witchPotions=[],witchSplashes=[],enemyCorpses=[],revivalEffects=[];
 const ENDLESS_ENEMY_CAP=10,ENDLESS_PICKUP_CAP=48,ENDLESS_INITIAL_ENEMIES=4;
+const ENEMY_GAP=1;
 let spawned=0,nextEnemyId=0,spawnTimer=0;
 const bossState={spawned:false,defeated:false,enemyId:null,count:0,nextLevel:20};
 let bossSpawnRetry=0;
@@ -699,7 +700,7 @@ function spawnEnemy(requestedType=null){
  for(let i=0;i<spots.length;i++){
   const [x,z]=spots[(start+i)%spots.length],distance=Math.hypot(x-player.x,z-player.z);
   if(distance<12||x-radius<-22.5||x+radius>22.5||z-radius<-28.5||z+radius>27.5||!canStand(x,z,radius,0))continue;
-  if(enemies.some(other=>other.hp>0&&Math.hypot(x-other.x,z-other.z)<radius+enemySettings(other).radius+.6))continue;
+  if(enemies.some(other=>other.hp>0&&Math.hypot(x-other.x,z-other.z)<radius+enemySettings(other).radius+ENEMY_GAP))continue;
   if(spawnPointHidden(type,x,z)){selected=[x,z];break;}
   if(distance>=18&&!fallback)fallback=[x,z];
  }
@@ -1383,7 +1384,7 @@ function enemyNavSeparation(enemy){
  let x=0,z=0;const radius=enemySettings(enemy).radius,index=enemies.indexOf(enemy);
  for(let i=0;i<enemies.length;i++){
   const other=enemies[i];if(other===enemy||other.hp<=0)continue;
-  let dx=enemy.x-other.x,dz=enemy.z-other.z,distance=Math.hypot(dx,dz),spacing=radius+enemySettings(other).radius+.5;
+  let dx=enemy.x-other.x,dz=enemy.z-other.z,distance=Math.hypot(dx,dz),spacing=radius+enemySettings(other).radius+ENEMY_GAP;
   if(distance>=spacing)continue;
   if(distance<.0001){const sign=index<i?-1:1,angle=((Math.min(index,i)+1)*1.71+(Math.max(index,i)+1)*.83);dx=Math.cos(angle)*sign;dz=Math.sin(angle)*sign;distance=1;}
   const weight=Math.max(.05,(spacing-Math.hypot(enemy.x-other.x,enemy.z-other.z))/spacing);
@@ -1396,13 +1397,22 @@ function separateEnemyCrowd(dt){
  const factor=1-Math.exp(-dt*10*(enemyStepMoveScale??1));
  for(let i=0;i<enemies.length;i++)for(let j=i+1;j<enemies.length;j++){
   const a=enemies[i],b=enemies[j];if(a.hp<=0||b.hp<=0)continue;
-  const ra=enemySettings(a).radius,rb=enemySettings(b).radius,minDistance=ra+rb+.4;
+  const ra=enemySettings(a).radius,rb=enemySettings(b).radius,minDistance=ra+rb+ENEMY_GAP;
   let dx=a.x-b.x,dz=a.z-b.z,distance=Math.hypot(dx,dz);if(distance>=minDistance)continue;
   if(distance<1e-6){const angle=(i+1)*1.71+(j+1)*.83;dx=Math.cos(angle);dz=Math.sin(angle);distance=0;}
   else{dx/=distance;dz/=distance;}
   const move=Math.min(.2,(minDistance-distance)*factor*.5);
   for(const [enemy,sign,radius]of [[a,1,ra],[b,-1,rb]]){const x=enemy.x+dx*move*sign,z=enemy.z+dz*move*sign;if(enemyNavSegment(enemy.x,enemy.z,x,z,radius)){enemy.x=x;enemy.z=z;}}
  }
+}
+function enemyCrowdCanMove(enemy,x,z){
+ const radius=enemySettings(enemy).radius;
+ for(const other of enemies){
+  if(other===enemy||other.hp<=0)continue;
+  const distance=Math.hypot(x-other.x,z-other.z),minimum=radius+enemySettings(other).radius+ENEMY_GAP;
+  if(distance<minimum-1e-4&&distance<Math.hypot(enemy.x-other.x,enemy.z-other.z)-1e-4)return false;
+ }
+ return true;
 }
 function enemyWalk(enemy,dt,speed,stopDistance,target=player,cacheKey=enemyKind(enemy)){
  if(isEnemyFrozen()||dt<=0)return;
@@ -1430,7 +1440,7 @@ function enemyWalk(enemy,dt,speed,stopDistance,target=player,cacheKey=enemyKind(
  // checks the full segment against live walls, even while a cached field is old.
  for(const direction of [[steerX/steerLength,steerZ/steerLength],[directionX,directionZ]]){
   const nx=enemy.x+direction[0]*travel,nz=enemy.z+direction[1]*travel;
-  if(enemyNavSegment(enemy.x,enemy.z,nx,nz,radius)){enemy.x=nx;enemy.z=nz;enemy.walking=true;return;}
+  if(enemyNavSegment(enemy.x,enemy.z,nx,nz,radius)&&enemyCrowdCanMove(enemy,nx,nz)){enemy.x=nx;enemy.z=nz;enemy.walking=true;return;}
  }
 }
 function dogCanStrike(enemy){
