@@ -59,7 +59,7 @@
       <div class="level-panel" aria-label="本局等级与经验"><div class="level-heading"><span class="level-badge mono">Lv <strong id="level">1</strong></span><span class="xp-numbers mono"><b id="xp">0</b><span class="xp-divider">/</span><span id="xpNext">100</span><span class="xp-unit">XP</span></span></div><div id="xpTrack" class="xp-track" role="progressbar" aria-label="升级经验" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="xpFill" style="width:0%"></div></div></div>
     </div>
     <div class="mission-clock" aria-label="存活时间"><span class="mono">存活时间 / SURVIVAL TIME</span><strong id="timer" class="mono">00:00</strong></div>
-    <div id="bossHealthPanel" class="hidden" aria-label="大火龙奶娃生命"><div class="boss-health-heading"><strong>大火龙奶娃</strong><span class="mono"><span id="bossHealthValue">80</span> / <span id="bossHealthMax">80</span></span></div><div class="boss-health-track"><div id="bossHealthFill" style="width:100%"></div></div></div>
+    <div id="bossHealthPanel" class="hidden" aria-label="大火龙奶娃生命"><div class="boss-health-heading"><strong id="bossHealthName">大火龙奶娃</strong><span class="mono"><span id="bossHealthValue">80</span> / <span id="bossHealthMax">80</span></span></div><div class="boss-health-track"><div id="bossHealthFill" style="width:100%"></div></div></div>
     <div id="bleedStatus" class="hidden" role="status" aria-live="polite"></div>
     <div id="defenseStatus" class="hidden" aria-label="闪避与装备状态"></div>
     <div id="freezeStatus" aria-label="全场冰冻技能状态"><kbd class="freeze-key">Q</kbd><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 3v26M5 9.5l22 13M5 22.5l22-13M12 6l4 4 4-4M12 26l4-4 4 4M6 14l5-1-1-5M22 24l-1-5 5-1M6 18l5 1-1 5M22 8l-1 5 5 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><div><span class="freeze-label">全场冰冻</span><strong id="freezeStatusText" class="mono">就绪</strong></div></div>
@@ -93,6 +93,7 @@
     </div>
   </section>
 
+  <section id="encounterMenu" class="overlay-screen hidden" role="dialog" aria-modal="true" aria-labelledby="encounterTitle" aria-describedby="encounterDescription"><div class="encounter-panel"><div class="eyebrow">ENEMY INTELLIGENCE / 敌情通报</div><h2 id="encounterTitle"></h2><p id="encounterDescription"></p><button id="encounterConfirm" class="primary-btn" type="button">确认 · 继续战斗</button></div></section>
   <section id="chestMenu" class="overlay-screen hidden" role="dialog" aria-modal="true" aria-labelledby="chestTitle" aria-describedby="chestSubtitle" tabindex="-1">
     <div class="chest-panel"><div class="eyebrow"><span class="short-rule"></span>DRAGON CACHE</div><h2 id="chestTitle">火龙宝藏</h2><p id="chestSubtitle">击败火龙奶娃，选择一份战利品。战斗已暂停。</p>
       <div class="chest-choices">
