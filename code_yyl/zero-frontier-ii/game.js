@@ -344,7 +344,7 @@ function drawEffects(vp,eye){if(!effectData.length)return;gl.bindBuffer(gl.ARRAY
 const mini=$('minimap').getContext('2d');
 let state='menu',player, enemies=[],bullets=[],particles=[],pickups=[],wave=1,score=0,kills=0,shots=0,hits=0,elapsed=0,ammo=30,reserve=180,reload=0,cooldown=0,transition=0,time=0,last=performance.now(),shotFlash=0,hitFlash=0,damageFlash=0,bob=0,kick=0,noticeTimer=0,moveAmount=0;
 const witchPotions=[],witchSplashes=[],enemyCorpses=[],revivalEffects=[];
-const ENDLESS_ENEMY_CAP=20,ENDLESS_PICKUP_CAP=48,ENDLESS_INITIAL_ENEMIES=4;
+const ENDLESS_ENEMY_CAP=10,ENDLESS_PICKUP_CAP=48,ENDLESS_INITIAL_ENEMIES=4;
 let spawned=0,nextEnemyId=0,spawnTimer=0;
 const bossState={spawned:false,defeated:false,enemyId:null,count:0,nextLevel:20};
 let bossSpawnRetry=0;
@@ -392,7 +392,8 @@ function getPlayerDamageMultiplier(){return 1+runProgress.damageBonus;}
 function getBulletDamage(headshot=false){return (1+runProgress.bulletBaseBonus)*getPlayerDamageMultiplier()*(headshot?HEADSHOT_DAMAGE_MULTIPLIER:1);}
 function getBulletUpgradeGain(id,level=runProgress.pendingLevels[0]??runProgress.level){return (id==='majorBullet'?3:.5)*(level>=40?4:level>=20?2:1);}
 function getReloadDuration(){return 1.65/(1+runProgress.reloadRanks*.1);}
-function getEnemyCap(){return ENDLESS_ENEMY_CAP+Math.floor(runProgress.level/10)*2;}
+function getEnemyCap(){return ENDLESS_ENEMY_CAP+Math.floor(runProgress.level/10);}
+function getSmallEnemyCount(){return enemies.filter(enemy=>enemyKind(enemy)!=='boss').length;}
 function getEnemyScaling(){return 1+Math.floor(kills/20)*.15;}
 function getEnemyDamageScaling(){return 1+Math.floor(kills/20)*.07;}
 function healthAfterDamage(health,amount){const remaining=health-amount;return remaining<=1e-9?0:remaining;}
@@ -691,7 +692,8 @@ function spawnPointHidden(type,x,z){
  return true;
 }
 function spawnEnemy(requestedType=null){
- if(state!=='playing'||!player||enemies.length>=getEnemyCap())return null;
+ if(state!=='playing'||!player||(requestedType!=='boss'&&getSmallEnemyCount()>=getEnemyCap()))return null;
+ if(requestedType==='boss'&&enemies.some(enemy=>enemyKind(enemy)==='boss'&&enemy.hp>0))return null;
  const type=requestedType&&ENEMY_TYPES[requestedType]?requestedType:randomEnemyType(),radius=ENEMY_TYPES[type].radius,spots=currentMap.enemies,start=Math.floor(Math.random()*spots.length);
  let selected=null,fallback=null;
  for(let i=0;i<spots.length;i++){
@@ -717,7 +719,7 @@ function updateEndlessSpawns(dt){
  // Each twenty-level milestone queues one boss; the previous boss must be defeated first.
  if(runProgress.level>=bossState.nextLevel&&(!bossState.spawned||bossState.defeated)){bossSpawnRetry=Math.max(0,bossSpawnRetry-dt);if(bossSpawnRetry<=1e-9){spawnTimer=trySpawnBoss()?interval:.35;bossSpawnRetry=.35;}return;}
  // A full arena or delayed frame never banks a burst of overdue spawns.
- if(enemies.length>=getEnemyCap()){spawnTimer=interval;return;}
+ if(getSmallEnemyCount()>=getEnemyCap()){spawnTimer=interval;return;}
  spawnTimer-=dt;if(spawnTimer>1e-9)return;
  spawnTimer=spawnEnemy()?interval:.35;
 }
@@ -1183,7 +1185,7 @@ function updateWitchRevival(dt){
   if(corpse.attempted||elapsed-corpse.diedAt>WITCH_REVIVAL_WINDOW+1e-9){enemyCorpses.splice(i,1);continue;}
   if(activeDt<=1e-9)continue;
   // A crowded arena may postpone eligibility, but never the original five-second deadline.
-  if(enemies.length>=getEnemyCap()||enemies.some(enemy=>enemy.id===corpse.id))continue;
+  if(getSmallEnemyCount()>=getEnemyCap()||enemies.some(enemy=>enemy.id===corpse.id))continue;
   const source=enemies.find(enemy=>witchCanRevive(enemy,corpse));if(!source)continue;
   corpse.attempted=true;corpse.source.revivalAttempted=true;enemyCorpses.splice(i,1);
   if(Math.random()>=WITCH_REVIVAL_CHANCE)continue;
