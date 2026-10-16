@@ -20,6 +20,8 @@ const ENEMY_HIT_ZONES=[[0,0,0,.79,'body'],[0,.83,0,.32,'head'],[-.28,-.91,.12,.2
 const DOG_HIT_ZONES=[[0,-.13,-.13,.53,'body'],[0,.12,.47,.38,'head'],[0,-.01,.81,.22,'head'],[-.325,-.64,.53,.23,'body'],[.325,-.64,.53,.23,'body'],[-.368,-.65,-.32,.21,'body'],[.368,-.65,-.32,.21,'body']];
 const WITCH_HIT_ZONES=[[0,-.14,0,.51,'body'],[0,-.65,.015,.39,'body'],[0,.815,.015,.36,'head'],[0,.77,.36,.17,'head'],[-.34,.20,.28,.25,'body'],[.34,.20,.28,.25,'body'],[-.17,-.955,.08,.20,'body'],[.17,-.955,.08,.20,'body']];
 const BOSS_HIT_ZONES=ENEMY_HIT_ZONES.map(([x,y,z,r,zone])=>[x*1.6,y*1.6,z*1.6,r*1.6,zone]);
+const SHIELD_DOG_BOSS_SCALE=2.15;
+const SHIELD_DOG_BOSS_HIT_ZONES=DOG_HIT_ZONES.map(([x,y,z,r,zone])=>[x*SHIELD_DOG_BOSS_SCALE,y*SHIELD_DOG_BOSS_SCALE,z*SHIELD_DOG_BOSS_SCALE,r*SHIELD_DOG_BOSS_SCALE,zone]);
 const ENEMY_TYPES={milk:{baseY:1.15,radius:.8,speed:1},dog:{baseY:.80,radius:.58,speed:3.3},witch:{baseY:1.05,radius:.58,speed:1},boss:{baseY:1.84,radius:1.28,speed:.8},doubao:{baseY:0,radius:1.1,speed:.75}};
 const HEADSHOT_COLOR=[1,.70,.30];
 const V=(x=0,y=0,z=0)=>({x,y,z}), length=v=>Math.hypot(v.x,v.y,v.z);
@@ -500,10 +502,10 @@ function chooseLevelUpgrade(index){
  resume();
 }
 function dropBossChest(target){
- if(CHEST_REWARDS.every(([id])=>runProgress[id])){showNotice('火龙已被击败 · 宝箱装备均已获得',4);return;}
+ if(CHEST_REWARDS.every(([id])=>runProgress[id])){showNotice('Boss 已被击败 · 宝箱装备均已获得',4);return;}
  if(bossChests.some(chest=>chest.sourceId===target.id)||chestRewardPending)return;
  bossChests.push({x:target.x,y:.45,z:target.z,phase:0,sourceId:target.id});
- showNotice('大火龙已被击败 · 拾取宝箱选择奖励',4);
+ showNotice((target.bossArchetype==='shieldDog'?'刀盾狗 Boss':'大火龙')+' 已被击败 · 拾取宝箱选择奖励',4);
 }
 function openBossChest(chest){
  const index=bossChests.indexOf(chest);if(state!=='playing'||index<0||!player||player.hp<=0)return false;
@@ -735,8 +737,8 @@ function rescaleEnemies(){
 function randomEnemyType(){if(runProgress.level<5)return 'milk';const roll=Math.random()*(runProgress.level<10?80:110);return roll<40?'milk':roll<80?'dog':'witch';}
 function getSpawnInterval(survivalTime=elapsed){return Math.max(.5,2.8*Math.pow(.86,Math.max(0,survivalTime)/30));}
 function spawnPointHidden(type,x,z){
- const settings=ENEMY_TYPES[type],zones=type==='doubao'?DOUBAO_HIT_ZONES:type==='boss'?BOSS_HIT_ZONES:type==='dog'?DOG_HIT_ZONES:type==='witch'?WITCH_HIT_ZONES:ENEMY_HIT_ZONES;
- const height=settings.baseY+Math.max(...zones.map(zone=>zone[1]+zone[3])),extent=settings.radius+.4;
+ const settings=ENEMY_TYPES[type],shieldDogBoss=type==='boss'&&bossState.nextLevel===40,zones=type==='doubao'?DOUBAO_HIT_ZONES:shieldDogBoss?SHIELD_DOG_BOSS_HIT_ZONES:type==='boss'?BOSS_HIT_ZONES:type==='dog'?DOG_HIT_ZONES:type==='witch'?WITCH_HIT_ZONES:ENEMY_HIT_ZONES;
+ const baseY=shieldDogBoss ? .8*SHIELD_DOG_BOSS_SCALE : settings.baseY,height=baseY+Math.max(...zones.map(zone=>zone[1]+zone[3])),extent=settings.radius+.4;
  const dx=x-player.x,dy=height*.5-player.y,dz=z-player.z,sy=Math.sin(player.yaw),cy=Math.cos(player.yaw),sp=Math.sin(player.pitch),cp=Math.cos(player.pitch);
  const depth=dx*sy*cp+dy*sp-dz*cy*cp,right=dx*cy+dz*sy,up=-dx*sy*sp+dy*cp+dz*cy*sp;
  const size=getGameSize(),tanY=Math.tan(38*Math.PI/180),tanX=tanY*size.width/Math.max(1,size.height),bound=Math.hypot(extent,height*.5);
@@ -769,7 +771,16 @@ function trySpawnBoss(){
  if(state!=='playing'||!player||runProgress.level<bossState.nextLevel||(bossState.spawned&&!bossState.defeated))return null;
  const enemy=spawnEnemy('boss');if(!enemy)return null;
  bossState.spawned=true;bossState.defeated=false;bossState.enemyId=enemy.id;bossState.count++;bossState.nextLevel+=20;
- enemy.spawnLevel=bossState.nextLevel-20;if(enemy.spawnLevel===40)encounterState.level40Health=enemy.maxHp;showEncounter('小 Boss 来袭 · 火龙奶娃','三发扇形火球：蓄力0.9秒后射出；近距离扇形喷火：前摇1.1秒。利用掩体躲火球，看到地面扇形预警及时拉开距离。击败后掉落技能宝箱。');playBossIntroMusic('dragon');showNotice('小 Boss 来袭 · 火龙奶娃',3.5);tone(145,.35,'sawtooth',.035,-65);return enemy;
+ enemy.spawnLevel=bossState.nextLevel-20;
+ if(enemy.spawnLevel===40){
+  enemy.bossArchetype='shieldDog';enemy.modelScale=SHIELD_DOG_BOSS_SCALE;enemy.y=.8*SHIELD_DOG_BOSS_SCALE;enemy.bossChargeCooldown=3.5;encounterState.level40Health=enemy.maxHp;
+  showEncounter('Lv 40 · 刀盾狗 Boss 来袭','巨型刀盾狗 Boss，血量沿用原 40 级 Boss。普通攻击会近身挥砍；大招“直线冲撞”会先沿地面标出冲锋路线，蓄力 1 秒后高速直冲，撞中造成重击。看到路线后横向闪避或躲到掩体后。击败后掉落 Boss 宝箱。');
+  showNotice('Lv 40 · 刀盾狗 Boss 来袭',3.5);
+ }else{
+  showEncounter('小 Boss 来袭 · 火龙奶娃','三发扇形火球：蓄力0.9秒后射出；近距离扇形喷火：前摇1.1秒。利用掩体躲火球，看到地面扇形预警及时拉开距离。击败后掉落技能宝箱。');
+  showNotice('小 Boss 来袭 · 火龙奶娃',3.5);
+ }
+ playBossIntroMusic('dragon');tone(145,.35,'sawtooth',.035,-65);return enemy;
 }
 function updateEndlessSpawns(dt){
  if(state!=='playing'||dt<=0)return;
@@ -1012,7 +1023,8 @@ function traceEnemy(direction,range=100,allowInside=false){
  const wall=wallDistance(player,direction);let nearest=Math.min(range,wall),target=null,zone=null;
  for(const enemy of enemies){
   const cs=Math.cos(enemy.yaw),sn=Math.sin(enemy.yaw);
-  for(const [dx,height,dz,radius,hitZone] of (enemy.type==='doubao'?DOUBAO_HIT_ZONES:enemyKind(enemy)==='boss'?BOSS_HIT_ZONES:enemyKind(enemy)==='dog'?DOG_HIT_ZONES:enemyKind(enemy)==='witch'?WITCH_HIT_ZONES:ENEMY_HIT_ZONES)){
+  const zones=enemy.type==='doubao'?DOUBAO_HIT_ZONES:enemy.bossArchetype==='shieldDog'?SHIELD_DOG_BOSS_HIT_ZONES:enemyKind(enemy)==='boss'?BOSS_HIT_ZONES:enemyKind(enemy)==='dog'?DOG_HIT_ZONES:enemyKind(enemy)==='witch'?WITCH_HIT_ZONES:ENEMY_HIT_ZONES;
+  for(const [dx,height,dz,radius,hitZone] of zones){
    const center=V(enemy.x+dx*cs+dz*sn,enemy.y+height,enemy.z+dz*cs-dx*sn),offset=sub(player,center),projection=dot(offset,direction),disc=projection*projection-dot(offset,offset)+radius*radius;
    if(disc<0)continue;
    const root=Math.sqrt(disc),entry=-projection-root,exit=-projection+root;
@@ -1198,7 +1210,7 @@ function updateDefenseHUD(){
 function updateHUD(){updateDefenseHUD();
  const bulletDamage=getBulletDamage();setHudText('bulletDamageValue',Math.round(bulletDamage*100)/100);setHudText('headDamageValue',Math.round(getBulletDamage(true)*100)/100);setHudClass('bulletDamagePanel','hidden',activeWeapon!=='ak');
  updateFreezeHUD();
- const boss=enemies.find(enemy=>enemyKind(enemy)==='boss'&&enemy.hp>0);setHudText('bossHealthName',boss?.type==='doubao'?'豆包 · 关卡大 Boss':'大火龙奶娃');setHudClass('bossHealthPanel','hidden',!boss);
+ const boss=enemies.find(enemy=>enemyKind(enemy)==='boss'&&enemy.hp>0),bossName=boss?.type==='doubao'?'豆包 · 关卡大 Boss':boss?.bossArchetype==='shieldDog'?'刀盾狗 Boss':'大火龙奶娃';setHudText('bossHealthName',bossName);setHudClass('bossHealthPanel','hidden',!boss);
  if(boss){setHudText('bossHealthValue',Math.ceil(boss.hp));setHudText('bossHealthMax',Math.ceil(boss.maxHp));setHudStyle('bossHealthFill','width',clamp(boss.hp/boss.maxHp*100,0,100)+'%');}
  setHudClass('shieldPanel','hidden',!runProgress.fireShield);setHudText('shieldValue',Math.ceil(shieldState.value));setHudText('shieldMax',getMaxShield());setHudStyle('shieldFill','width',getMaxShield()>0?clamp(shieldState.value/getMaxShield()*100,0,100)+'%':'0%');
  setHudStyle('shieldOverlay','opacity',state==='playing'&&runProgress.fireShield?String(Math.max(0,1-(elapsed-shieldState.lastHitAt)/.25)*.35):'0');
@@ -1217,6 +1229,8 @@ const MILK_BURST_INTERVAL=.12;
 function getMilkBurstCount(){return runProgress.level>=20?3:runProgress.level>=10?2:1;}
 const BOSS_FIREBALL_WINDUP=.9,BOSS_FIREBALL_RECOVER=.45,BOSS_FIREBALL_CYCLE=4.5,BOSS_FIREBALL_SPEED=22;
 const BOSS_BREATH_WINDUP=1.1,BOSS_BREATH_RECOVER=.55,BOSS_BREATH_CYCLE=5,BOSS_BREATH_RANGE=7,BOSS_BREATH_HALF_ANGLE=35*Math.PI/180;
+const SHIELD_DOG_BOSS_CLAW_RANGE=3.15,SHIELD_DOG_BOSS_CLAW_WINDUP=.58,SHIELD_DOG_BOSS_CLAW_RECOVER=.72,SHIELD_DOG_BOSS_CLAW_CYCLE=2.25;
+const SHIELD_DOG_BOSS_CHARGE_WINDUP=1.05,SHIELD_DOG_BOSS_CHARGE_SPEED=15,SHIELD_DOG_BOSS_CHARGE_DISTANCE=18,SHIELD_DOG_BOSS_CHARGE_DAMAGE=32,SHIELD_DOG_BOSS_CHARGE_COOLDOWN=8,SHIELD_DOG_BOSS_CHARGE_RECOVER=.9;
 const WITCH_POTION_RANGE=16,WITCH_POTION_RADIUS=3,WITCH_POTION_DAMAGE=15;
 const WITCH_POTION_WINDUP=.4,WITCH_POTION_RECOVER=.3,WITCH_POTION_CYCLE=4.2,WITCH_POTION_GRAVITY=14,WITCH_POTION_SIZE=.12;
 const WITCH_SUPPORT_RADIUS=7,WITCH_ATTACK_RATE=1.2;
@@ -1468,7 +1482,7 @@ function separateEnemyCrowd(dt){
  if(isEnemyFrozen()||dt<=0)return;
  const factor=1-Math.exp(-dt*10*(enemyStepMoveScale??1));
  for(let i=0;i<enemies.length;i++)for(let j=i+1;j<enemies.length;j++){
-  const a=enemies[i],b=enemies[j];if(a.hp<=0||b.hp<=0)continue;
+  const a=enemies[i],b=enemies[j];if(a.hp<=0||b.hp<=0||(a.bossArchetype==='shieldDog'&&a.bossPhase==='charging')||(b.bossArchetype==='shieldDog'&&b.bossPhase==='charging'))continue;
   const ra=enemySettings(a).radius,rb=enemySettings(b).radius,minDistance=ra+rb+ENEMY_GAP;
   let dx=a.x-b.x,dz=a.z-b.z,distance=Math.hypot(dx,dz);if(distance>=minDistance)continue;
   if(distance<1e-6){const angle=(i+1)*1.71+(j+1)*.83;dx=Math.cos(angle);dz=Math.sin(angle);distance=0;}
@@ -1753,8 +1767,85 @@ function drawDoubaoLaser(e,out,eye){
  const active=e.doubaoPhase==='laser';for(const segment of e.laserSegments||doubaoLaserSegments(e)){appendDoubaoBeam(out,segment.from,segment.to,eye,active?.07:.012,active?[1,.035,.02]:[1,.5,.22]);if(active)appendDoubaoBeam(out,segment.from,segment.to,eye,.022,[1,.8,.6]);}
 }
 
+function shieldDogBossClawHitsPlayer(enemy){
+ const dx=player.x-enemy.x,dz=player.z-enemy.z,distance=Math.hypot(dx,dz),yaw=enemy.bossAttackYaw||enemy.yaw;
+ if(distance>SHIELD_DOG_BOSS_CLAW_RANGE)return false;
+ if(distance>.001&&(Math.sin(yaw)*dx+Math.cos(yaw)*dz)/distance<.42)return false;
+ const from=V(enemy.x,enemy.y-.15,enemy.z),to=V(player.x,player.y-.3,player.z),delta=sub(to,from),lengthToPlayer=length(delta);
+ return lengthToPlayer<.001||wallDistance(from,norm(delta))>lengthToPlayer-.1;
+}
+function shieldDogBossChargeImpact(enemy){
+ if(enemy.bossChargeHit)return;
+ const hitRadius=1.45,dx=player.x-enemy.x,dz=player.z-enemy.z;
+ if(Math.hypot(dx,dz)>hitRadius||player.feetY>1.05)return;
+ const forward=V(Math.sin(enemy.bossAttackYaw),0,Math.cos(enemy.bossAttackYaw)),from=V(enemy.x,enemy.y+.05,enemy.z),to=V(player.x,.35,player.z),delta=sub(to,from),distance=length(delta);
+ if(distance>.001&&wallDistance(from,norm(delta))<distance-.08)return;
+ enemy.bossChargeHit=true;
+ const baseDamage=difficulty==='easy'?24:difficulty==='hard'?42:SHIELD_DOG_BOSS_CHARGE_DAMAGE,landed=damage(baseDamage*(enemy.damageScale??1));
+ if(landed&&state==='playing'){
+  player.vx=forward.x*4.2;player.vz=forward.z*4.2;
+  showNotice('刀盾狗冲撞命中',1.1);
+ }
+}
+function finishShieldDogCharge(enemy){
+ enemy.bossPhase='chargeRecover';enemy.bossTimer=0;enemy.bossProgress=0;enemy.walking=false;enemy.casting=false;
+ enemy.bossChargeCooldown=SHIELD_DOG_BOSS_CHARGE_COOLDOWN;
+}
+function updateShieldDogBoss(enemy,dt){
+ let phase=enemy.bossPhase||'idle';
+ if(phase==='idle'){
+  enemy.yaw=Math.atan2(player.x-enemy.x,player.z-enemy.z);
+  enemy.bossChargeCooldown=Math.max(0,(enemy.bossChargeCooldown||0)-dt);
+  const distance=Math.hypot(player.x-enemy.x,player.z-enemy.z);
+  if(enemy.bossChargeCooldown<=1e-9&&distance>=4.2&&distance<=30&&visible(enemy,player)){
+   enemy.bossAttackKind='charge';enemy.bossAttackYaw=enemy.yaw;enemy.bossTarget=V(player.x,0,player.z);enemy.bossPhase='chargeWindup';enemy.bossTimer=0;enemy.bossProgress=0;enemy.bossChargeDistance=0;enemy.bossChargeHit=false;enemy.walking=false;enemy.casting=true;
+   tone(185,.28,'sawtooth',.035,-65);return;
+  }
+  if(distance>SHIELD_DOG_BOSS_CLAW_RANGE){enemyWalk(enemy,dt,2.35,SHIELD_DOG_BOSS_CLAW_RANGE);return;}
+  enemy.walking=false;enemy.attack=Math.max(0,enemy.attack-dt);
+  if(enemy.attack<=1e-9){enemy.bossAttackKind='claw';enemy.bossAttackYaw=enemy.yaw;enemy.bossPhase='clawWindup';enemy.bossTimer=0;enemy.bossProgress=0;enemy.bossStrikeDone=false;enemy.casting=true;tone(270,.16,'triangle',.03,-90);}
+  return;
+ }
+ enemy.yaw=enemy.bossAttackYaw;enemy.walking=false;enemy.bossTimer+=dt;
+ if(phase==='chargeWindup'){
+  enemy.bossProgress=clamp(enemy.bossTimer/SHIELD_DOG_BOSS_CHARGE_WINDUP,0,1);
+  if(enemy.bossTimer>=SHIELD_DOG_BOSS_CHARGE_WINDUP-1e-9){enemy.bossPhase='charging';enemy.bossTimer=0;enemy.bossProgress=0;enemy.walking=true;enemy.bossChargeDistance=0;tone(105,.34,'sawtooth',.045,-35);}
+  return;
+ }
+ if(phase==='charging'){
+  const speedScale=enemyStepMoveScale??(freezeSkill.slowRemaining>1e-9?.5:1),forward=V(Math.sin(enemy.bossAttackYaw),0,Math.cos(enemy.bossAttackYaw));
+  let remaining=Math.min(SHIELD_DOG_BOSS_CHARGE_SPEED*speedScale*dt,SHIELD_DOG_BOSS_CHARGE_DISTANCE-(enemy.bossChargeDistance||0));
+  if(remaining<=1e-6){finishShieldDogCharge(enemy);return;}
+  enemy.walking=true;enemy.bossTimer+=dt;
+  while(remaining>1e-6){
+   const step=Math.min(.16,remaining),oldX=enemy.x,oldZ=enemy.z,nx=oldX+forward.x*step,nz=oldZ+forward.z*step,radius=Math.min(1.14,enemySettings(enemy).radius*.88);
+   if(nx<-22.5+radius||nx>22.5-radius||nz<-28.5+radius||nz>27.5-radius||!canStand(nx,nz,radius,0)){finishShieldDogCharge(enemy);return;}
+   enemy.x=nx;enemy.z=nz;enemy.bossChargeDistance=(enemy.bossChargeDistance||0)+step;remaining-=step;
+   shieldDogBossChargeImpact(enemy);
+   if(enemy.bossChargeHit){finishShieldDogCharge(enemy);return;}
+  }
+  if(enemy.bossChargeDistance>=SHIELD_DOG_BOSS_CHARGE_DISTANCE-1e-6||enemy.bossTimer>=SHIELD_DOG_BOSS_CHARGE_DISTANCE/(SHIELD_DOG_BOSS_CHARGE_SPEED*speedScale))finishShieldDogCharge(enemy);
+  return;
+ }
+ if(phase==='clawWindup'){
+  enemy.bossProgress=clamp(enemy.bossTimer/SHIELD_DOG_BOSS_CLAW_WINDUP,0,1);
+  if(enemy.bossTimer>=SHIELD_DOG_BOSS_CLAW_WINDUP-1e-9){
+   if(!enemy.bossStrikeDone&&shieldDogBossClawHitsPlayer(enemy)&&player.feetY<1.05){enemy.bossStrikeDone=true;damage((difficulty==='easy'?22:difficulty==='hard'?40:30)*(enemy.damageScale??1));}
+   if(state!=='playing')return;
+   enemy.bossPhase='clawRecover';enemy.bossTimer=Math.max(0,enemy.bossTimer-SHIELD_DOG_BOSS_CLAW_WINDUP);enemy.bossProgress=0;
+  }
+  return;
+ }
+ const recover=phase==='clawRecover'?SHIELD_DOG_BOSS_CLAW_RECOVER:SHIELD_DOG_BOSS_CHARGE_RECOVER;
+ enemy.bossProgress=clamp(enemy.bossTimer/recover,0,1);
+ if(enemy.bossTimer>=recover-1e-9){
+  const remainder=Math.max(0,enemy.bossTimer-recover);enemy.bossPhase='idle';enemy.bossTimer=0;enemy.bossProgress=0;enemy.casting=false;
+  enemy.attack=phase==='clawRecover'?Math.max(0,SHIELD_DOG_BOSS_CLAW_CYCLE-SHIELD_DOG_BOSS_CLAW_WINDUP-SHIELD_DOG_BOSS_CLAW_RECOVER-remainder):0;
+ }
+}
 function updateBossEnemy(enemy,dt){
  if(state!=='playing'||isEnemyFrozen()||dt<=0||enemy.hp<=0)return;
+ if(enemy.bossArchetype==='shieldDog'){updateShieldDogBoss(enemy,dt);return;}
  const phase=enemy.bossPhase||'idle';
  if(phase==='idle'){
   enemy.yaw=Math.atan2(player.x-enemy.x,player.z-enemy.z);
@@ -1787,7 +1878,8 @@ function updateEnemies(dt){
  if(isEnemyFrozen()||dt<=0)return;
  for(const enemy of enemies){
   const settings=enemySettings(enemy);
-  enemy.y=settings.baseY+Math.abs(Math.sin(time*(enemyKind(enemy)==='dog'?9:3)+enemy.phase))*(enemyKind(enemy)==='dog'?.018:.025);
+  const baseY=enemy.bossArchetype==='shieldDog' ? .8*SHIELD_DOG_BOSS_SCALE : settings.baseY;
+  enemy.y=baseY+Math.abs(Math.sin(time*(enemyKind(enemy)==='dog'?9:3)+enemy.phase))*(enemy.bossArchetype==='shieldDog' ? .038 : enemyKind(enemy)==='dog' ? .018 : .025);
   enemy.flash=Math.max(0,enemy.flash-dt);
   enemy.supportPulse=Math.max(0,(enemy.supportPulse||0)-dt*2.5);
  }
@@ -2156,6 +2248,7 @@ function bossSetWingMatrix(e,side,lift){
  m[12]=e.x+1.6*(cy*side*.40-sy*.28);m[13]=e.y+1.6*(.42+lift);m[14]=e.z+1.6*(-sy*side*.40-cy*.28);m[15]=1;return m;
 }
 function drawBossModel(e,vp,eye){
+ if(e.bossArchetype==='shieldDog'){drawDogModel(e,vp,eye);return;}
  prepareMilkModel();prepareBossVisuals();const stride=milkStride(e),lift=Math.abs(stride)*.15,flash=e.flash>0?.64:0;
  draw(milkGpuModel.core,vp,eye,1,bossScaleMilkMatrix(milkSetBaseMatrix(bossVisualMatrix,e,lift),e),flash);
  draw(milkGpuModel.legs[0],vp,eye,1,bossScaleMilkMatrix(milkSetBaseMatrix(bossVisualMatrix,e,Math.max(0,stride),stride),e),flash);
@@ -2170,6 +2263,17 @@ function drawBossFire(x,y,z,vp,eye,phase=0,scale=1){
  draw(bossVisualGpu.embers,vp,eye,1,witchPotionSetMatrix(x,y,z,getEnemyVisualTime()*4+phase,.7,phase,scale,scale,scale));
 }
 function drawBossEffects(e,vp,eye){
+ if(e.bossArchetype==='shieldDog'){
+  if(e.bossPhase==='chargeWindup'){
+   const yaw=e.bossAttackYaw||0,forward=V(Math.sin(yaw),0,Math.cos(yaw)),side=V(Math.cos(yaw),0,-Math.sin(yaw)),origin=V(e.x,.075,e.z),lengthGuide=Math.max(0,Math.min(SHIELD_DOG_BOSS_CHARGE_DISTANCE,wallDistance(origin,forward)-1.25)),halfWidth=.11;
+   for(let d=.35;d<lengthGuide;d+=1.05){const end=Math.min(lengthGuide,d+.62),a=V(e.x+forward.x*d+side.x*halfWidth,.075,e.z+forward.z*d+side.z*halfWidth),b=V(e.x+forward.x*d-side.x*halfWidth,.075,e.z+forward.z*d-side.z*halfWidth),c=V(e.x+forward.x*end-side.x*halfWidth,.075,e.z+forward.z*end-side.z*halfWidth),f=V(e.x+forward.x*end+side.x*halfWidth,.075,e.z+forward.z*end+side.z*halfWidth);for(const p of [a,b,c,a,c,f])effectData.push(p.x,p.y,p.z,0,1,0,1,.22,.035,.75);}
+   if(lengthGuide>.5){const tip=V(e.x+forward.x*lengthGuide,.08,e.z+forward.z*lengthGuide),left=V(tip.x-forward.x*.68+side.x*.48,.08,tip.z-forward.z*.68+side.z*.48),right=V(tip.x-forward.x*.68-side.x*.48,.08,tip.z-forward.z*.68-side.z*.48);for(const p of [left,right,tip])effectData.push(p.x,p.y,p.z,0,1,0,1,.48,.06,.9);}
+  }else if(e.bossPhase==='charging'){
+   const yaw=e.bossAttackYaw||0,back=V(-Math.sin(yaw),0,-Math.cos(yaw));
+   for(let i=0;i<3;i++){const distance=.55+i*.47,x=e.x+back.x*distance,z=e.z+back.z*distance,width=.24-i*.045,tip=V(x,.19,z),left=V(x+Math.cos(yaw)*width,.19,z-Math.sin(yaw)*width),right=V(x-Math.cos(yaw)*width,.19,z+Math.sin(yaw)*width);for(const p of [left,right,tip])effectData.push(p.x,p.y,p.z,0,1,0,1,.27,.045,.72);}
+  }
+  return;
+ }
  if(e.bossPhase==='fireball'){
   const p=clamp(e.bossProgress||0,0,1),origin=bossFireballOrigin(e);drawBossFire(origin.x,origin.y,origin.z,vp,eye,e.phase||0,.35+1.15*p);
  }else if(e.bossAttackKind==='breath'&&(e.bossPhase==='breath'||e.bossPhase==='recover')){
@@ -2316,26 +2420,28 @@ function dogPrepareModel(){
   const g=dogBuildGeometry();dogGpuModel={core:mesh(g.core),paws:g.paws.map(p=>mesh(p)),hind:g.hind.map(p=>mesh(p))};
 }
 function dogSetModel(e,px,py,pz,pitch,roll,dx,dy,dz){
-  const yaw=e.yaw||0,cy=Math.cos(yaw),sy=Math.sin(yaw),cx=Math.cos(pitch),sx=Math.sin(pitch),cz=Math.cos(roll),sz=Math.sin(roll),m=dogModelMatrix;
+  const yaw=e.yaw||0,cy=Math.cos(yaw),sy=Math.sin(yaw),cx=Math.cos(pitch),sx=Math.sin(pitch),cz=Math.cos(roll),sz=Math.sin(roll),scale=e.modelScale||1,m=dogModelMatrix;
   // Ry(world heading) * Rz(local roll) * Rx(local pitch), rotated about a limb pivot.
-  m[0]=cy*cz;m[1]=sz;m[2]=-sy*cz;m[3]=0;
-  m[4]=-cy*sz*cx+sy*sx;m[5]=cz*cx;m[6]=sy*sz*cx+cy*sx;m[7]=0;
-  m[8]=cy*sz*sx+sy*cx;m[9]=-cz*sx;m[10]=-sy*sz*sx+cy*cx;m[11]=0;
-  const x=px+dx,z=pz+dz;
+  m[0]=scale*cy*cz;m[1]=scale*sz;m[2]=-scale*sy*cz;m[3]=0;
+  m[4]=scale*(-cy*sz*cx+sy*sx);m[5]=scale*cz*cx;m[6]=scale*(sy*sz*cx+cy*sx);m[7]=0;
+  m[8]=scale*(cy*sz*sx+sy*cx);m[9]=-scale*cz*sx;m[10]=scale*(-sy*sz*sx+cy*cx);m[11]=0;
+  const x=(px+dx)*scale,z=(pz+dz)*scale;
   m[12]=(e.x||0)+cy*x+sy*z-m[0]*px-m[4]*py-m[8]*pz;
-  m[13]=(Number.isFinite(e.y)?e.y:.80)+py+dy-m[1]*px-m[5]*py-m[9]*pz;
+  m[13]=(Number.isFinite(e.y)?e.y:.80)+(py+dy)*scale-m[1]*px-m[5]*py-m[9]*pz;
   m[14]=(e.z||0)+cy*z-sy*x-m[2]*px-m[6]*py-m[10]*pz;m[15]=1;
   return m;
 }
 function drawDogModel(e,vp,eye){
   dogPrepareModel();
   const phase=e.clawPhase||'idle',progress=Math.max(0,Math.min(1,Number.isFinite(e.clawProgress)?e.clawProgress:0)),smooth=progress*progress*(3-2*progress);
+  const shieldDogBoss=e.bossArchetype==='shieldDog',chargeWindup=shieldDogBoss&&e.bossPhase==='chargeWindup'?(e.bossProgress||0):0,charging=shieldDogBoss&&e.bossPhase==='charging';
   let curled=0,extended=0;
   if(phase==='windup')curled=smooth;
   else if(phase==='strike'){curled=1-smooth;extended=smooth;}
   else if(phase==='recover')extended=1-smooth;
-  const attacking=phase!=='idle',walk=e.walking===false||attacking?0:Math.sin((typeof getEnemyVisualTime==='function'?getEnemyVisualTime():time)*14+(e.phase||0)),lift=Math.abs(walk)*.011,side=e.attackSide===-1?-1:1,flash=e.flash>0?.64:0;
-  draw(dogGpuModel.core,vp,eye,1,dogSetModel(e,0,0,0,-.045*curled+.040*extended,side*.025*curled,0,lift-.020*curled,-.035*curled+.055*extended),flash);
+  const attacking=phase!=='idle'||(shieldDogBoss&&!charging),walk=e.walking===false||attacking?0:Math.sin((typeof getEnemyVisualTime==='function'?getEnemyVisualTime():time)*14+(e.phase||0)),lift=Math.abs(walk)*.011,side=e.attackSide===-1?-1:1,flash=e.flash>0?.64:0;
+  const chargeLean=charging ? .22 : 0;
+  draw(dogGpuModel.core,vp,eye,1,dogSetModel(e,0,0,0,-.045*curled+.040*extended+chargeWindup*.19-chargeLean,side*.025*curled,0,lift-.020*curled-chargeWindup*.055,-.035*curled+.055*extended+(charging ? .18 : chargeWindup*.035)),flash);
   for(let i=0;i<2;i++){
     const s=i===0?-1:1,stride=walk*s,active=s===side;
     const curl=active?curled:0,reach=active?extended:0;
