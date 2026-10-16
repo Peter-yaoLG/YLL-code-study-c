@@ -396,8 +396,10 @@ function advanceFreezeSkill(dt){
  freezeFrame.activeDt=activeDt;freezeFrame.slowDt=slowDt;freezeFrame.normalDt=activeDt-slowDt;
  return freezeFrame;
 }
-const runProgress={level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,lastStandReadyAt:0,healthConverter:false,converterKills:0,damageCloakReadyAt:0};
+const runProgress={level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,lastStandReadyAt:0,healthConverter:false,converterKills:0,damageCloakReadyAt:0,gatling:false};
 const CHEST_REWARDS=[['fireBullets','chestChoiceFire'],['fireShield','chestChoiceShield'],['dodgeCloak','chestChoiceDodge'],['damageCloak','chestChoiceArmor'],['lastStand','chestChoiceLastStand'],['healthConverter','chestChoiceConverter']];
+const GATLING_REWARD=['gatling','chestChoiceGatling'];
+let activeChestChoices=CHEST_REWARDS;
 function getDodgeCap(){return runProgress.dodgeCloak?.7:.4;}
 function getDodgeChance(){return Math.min(getDodgeCap(),runProgress.dodgeRanks*.05);}
 let xpAwardDeferral=0;
@@ -427,9 +429,9 @@ function healthAfterDamage(health,amount){const remaining=health-amount;return r
 function healFromBullet(dealtDamage){if(player&&player.hp>0&&runProgress.leechLevel>0&&dealtDamage>0)player.hp=Math.min(getMaxHealth(),player.hp+dealtDamage*.3*runProgress.leechLevel);}
 function resetRunProgress(){
  stopMenuMusic();stopBossMusic();smallEnemyKills=0;Object.assign(encounterState,{dog:false,witch:false,doubaoSpawned:false,level40Health:20800});playerTrail.length=0;$('encounterMenu').classList.add('hidden');
- Object.assign(runProgress,{level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,lastStandReadyAt:0,healthConverter:false,converterKills:0,damageCloakReadyAt:0});
+  Object.assign(runProgress,{level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,lastStandReadyAt:0,healthConverter:false,converterKills:0,damageCloakReadyAt:0,gatling:false});
  bossChests.length=0;chestRewardPending=false;Object.assign(shieldState,{value:0,regenStart:0,regenElapsed:0,lastHitAt:-Infinity});$('chestMenu').classList.add('hidden');
- xpAwardDeferral=0;flameLinks.length=0;
+  xpAwardDeferral=0;flameLinks.length=0;activeChestChoices=CHEST_REWARDS;gatlingBullets.length=0;gatlingCooldown=0;gatlingSpin=0;gatlingShotIndex=0;gatlingKick=0;$('chestMenu').classList.remove('starting-chest');
  $('upgradeMenu').classList.add('hidden');$('upgradeMenu').classList.remove('major-upgrade');
 }
 function updateProgressHUD(){
@@ -511,15 +513,18 @@ function openBossChest(chest){
  const index=bossChests.indexOf(chest);if(state!=='playing'||index<0||!player||player.hp<=0)return false;
  bossChests.splice(index,1);chestRewardPending=true;state='chest';clearTouchInput();cancelMilkBursts();cancelLock();
  document.body.classList.remove('mouse-captured');document.exitPointerLock?.();$('pauseMenu').classList.add('hidden');
- $('chestTitle').textContent=chest.kind==='starting'?'开局宝箱':'火龙宝藏';$('chestSubtitle').textContent=chest.kind==='starting'?'从六项技能中任选一项，选择后开始战斗。':'击败火龙奶娃，选择一份战利品。战斗已暂停。';
- for(const [id,button]of CHEST_REWARDS){$(button).disabled=!!runProgress[id];$(button).classList.toggle('owned',!!runProgress[id]);}
- $('chestMenu').classList.remove('hidden');$(CHEST_REWARDS.find(([id])=>!runProgress[id])?.[1]||'chestChoiceFire').focus();updateHUD();return true;
+  const starting=chest.kind==='starting';activeChestChoices=starting?[...CHEST_REWARDS,GATLING_REWARD]:CHEST_REWARDS;
+  $('chestTitle').textContent=starting?'开局宝箱':'火龙宝藏';$('chestSubtitle').textContent=starting?'从七项奖励中任选一项，选择后开始战斗。':'击败火龙奶娃，选择一份战利品。战斗已暂停。';
+  $('chestMenu').classList.toggle('starting-chest',starting);
+  for(const [id,button]of [...CHEST_REWARDS,GATLING_REWARD]){const element=$(button);element.classList.toggle('hidden',id==='gatling'&&!starting);element.disabled=!!runProgress[id];element.classList.toggle('owned',!!runProgress[id]);}
+  $('chestMenu').classList.remove('hidden');const focusChoice=activeChestChoices.find(([id])=>!runProgress[id])?.[1]||'chestChoiceFire';$(focusChoice).focus();updateHUD();return true;
 }
 function chooseChestReward(id){
- if(state!=='chest'||!chestRewardPending||!CHEST_REWARDS.some(([reward])=>reward===id)||runProgress[id])return false;
+ if(state!=='chest'||!chestRewardPending||!activeChestChoices.some(([reward])=>reward===id)||runProgress[id])return false;
  runProgress[id]=true;
+ if(id==='gatling'){activeWeapon='gatling';previousWeapon='knife';weaponSwitch=null;queuedWeapon=null;gatlingBullets.length=0;gatlingCooldown=0;gatlingSpin=0;fire=false;showNotice('开挂已启用 · 第三人称自动锁头',3);tone(980,.18,'sawtooth',.035,-430);}
  if(id==='fireShield')Object.assign(shieldState,{value:getMaxShield(),regenStart:getMaxShield(),regenElapsed:5,lastHitAt:-Infinity});
- chestRewardPending=false;for(const [,button]of CHEST_REWARDS)$(button).disabled=true;$('chestMenu').classList.add('hidden');
+ chestRewardPending=false;activeChestChoices=CHEST_REWARDS;for(const [,button]of [...CHEST_REWARDS,GATLING_REWARD])$(button).disabled=true;$('chestMenu').classList.add('hidden');$('chestMenu').classList.remove('starting-chest');
  clearTouchInput();state='paused';$('pauseMenu').classList.remove('hidden');updateHUD();resume();return true;
 }
 function updateBossChests(dt){
@@ -553,6 +558,9 @@ const AK_TRACER_SPEED=150,AK_TRACER_LENGTH=2.8,AK_TRACER_LIMIT=16;
 const AK_MUZZLE_LOCAL=V(0,.012,-.9145),AK_MUZZLE_FOV_SCALE=Math.tan(38*Math.PI/180)/Math.tan(34*Math.PI/180);
 const TRACER_CORNERS=[[0,-1],[0,1],[1,1],[0,-1],[1,1],[1,-1]];
 const akTracers=[];
+const gatlingBullets=[];
+const GATLING_FIRE_INTERVAL=.13,GATLING_BULLET_SPEED=34,GATLING_LOCK_RANGE=72,GATLING_TURN_RATE=8,GATLING_PROJECTILE_LIMIT=96;
+let gatlingCooldown=0,gatlingSpin=0,gatlingShotIndex=0,gatlingKick=0;
 let recoilShot=0,recoilLastShot=-Infinity,recoilYaw=0,recoilPitch=0,lastRecoilYaw=0,lastRecoilPitch=0;
 let akViewRecoilPitch=0;
 let activeWeapon='ak',previousWeapon='knife',weaponSwitch=null,queuedWeapon=null,knifeAttackTimer=0,knifeStrikePending=false,knifeSwings=0,knifeHits=0;
@@ -805,7 +813,7 @@ function spawnWave(){
  spawnTimer=enemies.length<ENDLESS_INITIAL_ENEMIES?.35:getSpawnInterval();
  showNotice('无尽尸潮 · 坚持更久，敌人会更快抵达',3);tone(420,.15,'sine');
 }
-function begin(){syncMobileOrientation();clearTouchInput();if(!touchDevice()&&document.pointerLockElement!==canvas){requestLock('start');return;}resetRunProgress();akTracers.length=0;difficulty=$('difficulty').value;player={x:currentMap.spawn[0],y:STANDING_EYE_HEIGHT,z:currentMap.spawn[1],yaw:0,pitch:0,hp:100,bleedUntil:0,bleedNextTick:0,vx:0,vz:0,horizontalSpeed:0,vy:0,ground:true,feetY:0,eyeHeight:STANDING_EYE_HEIGHT,crouching:false};activeWeapon='ak';previousWeapon='knife';weaponSwitch=null;queuedWeapon=null;knifeAttackTimer=0;knifeStrikePending=false;knifeSwings=0;knifeHits=0;wave=1;score=0;kills=0;shots=0;hits=0;headshots=0;headshotKills=0;headshotTimer=0;lastHitHeadshot=false;elapsed=0;ammo=30;reserve=180;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;fire=false;keys={};bullets=[];particles=[];pickups=currentMap.supplies.map(([x,z])=>({x,z,phase:0}));touchMove=V();$('menu').classList.add('hidden');$('pauseMenu').classList.add('hidden');$('endMenu').classList.add('hidden');$('hud').classList.remove('hidden');document.body.classList.add('playing');state='playing';prepareCombatAudio();spawnWave();tone(280,.18,'triangle',.03,250);updateHUD();openStartingChest();}
+function begin(){syncMobileOrientation();clearTouchInput();if(!touchDevice()&&document.pointerLockElement!==canvas){requestLock('start');return;}resetRunProgress();akTracers.length=0;gatlingBullets.length=0;gatlingCooldown=0;gatlingSpin=0;gatlingShotIndex=0;gatlingKick=0;difficulty=$('difficulty').value;player={x:currentMap.spawn[0],y:STANDING_EYE_HEIGHT,z:currentMap.spawn[1],yaw:0,pitch:0,hp:100,bleedUntil:0,bleedNextTick:0,vx:0,vz:0,horizontalSpeed:0,vy:0,ground:true,feetY:0,eyeHeight:STANDING_EYE_HEIGHT,crouching:false};activeWeapon='ak';previousWeapon='knife';weaponSwitch=null;queuedWeapon=null;knifeAttackTimer=0;knifeStrikePending=false;knifeSwings=0;knifeHits=0;wave=1;score=0;kills=0;shots=0;hits=0;headshots=0;headshotKills=0;headshotTimer=0;lastHitHeadshot=false;elapsed=0;ammo=30;reserve=180;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;fire=false;keys={};bullets=[];particles=[];pickups=currentMap.supplies.map(([x,z])=>({x,z,phase:0}));touchMove=V();$('menu').classList.add('hidden');$('pauseMenu').classList.add('hidden');$('endMenu').classList.add('hidden');$('hud').classList.remove('hidden');document.body.classList.add('playing');state='playing';prepareCombatAudio();spawnWave();tone(280,.18,'triangle',.03,250);updateHUD();openStartingChest();}
 function lockFailed(error,generation){if(generation!==lockGeneration||!pendingLock)return;$('lockMenu').classList.remove('hidden');$('lockMessage').textContent=state==='paused'?'鼠标未能重新锁定，游戏保持暂停。':'当前窗口未能锁定鼠标，游戏尚未开始。';$('lockDetails').textContent=`请在 Chrome / Edge 独立窗口打开游戏地址 ${gameAddress}，再点击开始行动，或点击下方按钮重试。`;$('retryLockBtn').disabled=false;document.body.dataset.lockError=error?.name||'PointerLockError';console.warn('Pointer lock unavailable:',error?.name,error?.message);}
 function issueLockRequest(generation,raw,fallback=false){
  if(generation!==lockGeneration||!pendingLock)return;
@@ -836,7 +844,7 @@ function resume(){if(state!=='paused')return;syncMobileOrientation();clearTouchI
 function end(){
  flameLinks.length=0;
  if(!player||player.hp>0)return;
- state='lost';$('upgradeMenu').classList.add('hidden');clearBleeding();clearWitchPotions();clearEnemyRevival();resetFreezeSkill();akTracers.length=0;clearTouchInput();document.exitPointerLock?.();document.body.classList.remove('playing');$('hud').classList.add('hidden');$('endMenu').classList.remove('hidden');
+  state='lost';$('upgradeMenu').classList.add('hidden');clearBleeding();clearWitchPotions();clearEnemyRevival();resetFreezeSkill();akTracers.length=0;gatlingBullets.length=0;clearTouchInput();document.exitPointerLock?.();document.body.classList.remove('playing');$('hud').classList.add('hidden');$('endMenu').classList.remove('hidden');
  $('endTitle').textContent='生存结束';$('endSubtitle').textContent=`你坚持了 ${formatTime(elapsed)}，消灭了 ${kills} 个敌人。重新部署，挑战更长存活时间。`;
  $('endScore').textContent=String(score).padStart(5,'0');$('endKills').textContent=String(kills);$('endHeadshots').textContent=headshotKills;$('endAccuracy').textContent=(shots?Math.round(hits/shots*100):0)+'%';$('endTime').textContent=formatTime(elapsed);$('endLevel').textContent=runProgress.level;
  if(score>best){best=score;try{localStorage.setItem('zf2-best',best);}catch{}$('bestScore').textContent=String(best).padStart(5,'0');}tone(130,.7,'triangle',.08,-80);
@@ -990,15 +998,16 @@ function drawAKTracers(out,eye){
 function reloadGun(){if(state!=='playing'||activeWeapon!=='ak'||weaponSwitch||reload>0||ammo===30||reserve<=0)return;reload=getReloadDuration();fire=false;resetAKRecoil();tone(320,.08,'square',.025,-150);showNotice('更换弹匣',reload);}
 function burst(x,y,z,c,n=9){for(let i=0;i<n;i++)particles.push({x,y,z,vx:rnd(-3,3),vy:rnd(.4,4),vz:rnd(-3,3),life:rnd(.2,.65),c});}
 function requestWeapon(next){
- if(state!=='playing'||!['ak','knife'].includes(next))return;
+ if(state!=='playing'||!['ak','gatling','knife'].includes(next))return;
+ if(runProgress.gatling&&next==='ak')next='gatling';
  if(weaponSwitch){queuedWeapon=next===weaponSwitch.to?null:next;return;}
- if(next===activeWeapon)return;
- weaponSwitch={from:activeWeapon,to:next,elapsed:0,duration:WEAPON_SWITCH_DURATION,swapped:false};queuedWeapon=null;
+  if(next===activeWeapon)return;
+  weaponSwitch={from:activeWeapon,to:next,elapsed:0,duration:WEAPON_SWITCH_DURATION,swapped:false};queuedWeapon=null;
  reload=0;fire=false;resetAKRecoil();shotFlash=0;kick=0;knifeAttackTimer=0;knifeStrikePending=false;hitFlash=0;headshotTimer=0;lastHitHeadshot=false;
  if($('notice').textContent==='更换弹匣'){noticeTimer=0;$('notice').classList.remove('visible');}
  tone(230,.065,'triangle',.02,-100);updateHUD();
 }
-function quickSwitchWeapon(){const intended=queuedWeapon||weaponSwitch?.to||activeWeapon;requestWeapon(intended==='ak'?'knife':'ak');}
+function quickSwitchWeapon(){const intended=queuedWeapon||weaponSwitch?.to||activeWeapon;requestWeapon(intended==='knife'?(runProgress.gatling?'gatling':'ak'):'knife');}
 function weaponPresentation(){
  if(!weaponSwitch)return 0;
  const t=weaponSwitch.elapsed;
@@ -1082,6 +1091,56 @@ function spreadFlameDamage(source,bulletDamage){
  }
  return defeated;
 }
+function gatlingHeadPoint(enemy){
+ const zones=enemy.type==='doubao'?DOUBAO_HIT_ZONES:enemy.bossArchetype==='shieldDog'?SHIELD_DOG_BOSS_HIT_ZONES:enemyKind(enemy)==='boss'?BOSS_HIT_ZONES:enemyKind(enemy)==='dog'?DOG_HIT_ZONES:enemyKind(enemy)==='witch'?WITCH_HIT_ZONES:ENEMY_HIT_ZONES;
+ const zone=zones.filter(part=>part[4]==='head').sort((a,b)=>b[3]-a[3])[0]||zones[0],cs=Math.cos(enemy.yaw||0),sn=Math.sin(enemy.yaw||0),[dx,height,dz]=zone;
+ return V(enemy.x+dx*cs+dz*sn,enemy.y+height,enemy.z+dz*cs-dx*sn);
+}
+function findGatlingTarget(from=player,maxRange=GATLING_LOCK_RANGE){
+ if(!from)return null;const origin=V(from.x,from.feetY===undefined?from.y:from.feetY+1.2,from.z);let best=null,bestDistance=maxRange;
+ for(const enemy of enemies){if(enemy.hp<=0)continue;const point=gatlingHeadPoint(enemy),offset=sub(point,origin),distance=length(offset);if(distance>=bestDistance||distance<.05)continue;if(wallDistance(origin,norm(offset))<distance-.15)continue;best={enemy,point,distance};bestDistance=distance;}
+ return best;
+}
+function applyPlayerBulletHit(target,direction,distance,headshot=false,damageScale=1,impact=null){
+ if(!target||target.hp<=0)return false;
+ hits++;if(headshot)headshots++;
+ const bulletDamage=getBulletDamage(headshot)*damageScale,dealtDamage=Math.min(Math.max(0,target.hp),bulletDamage);target.hp=healthAfterDamage(target.hp,bulletDamage);if(dealtDamage>0)healFromBullet(dealtDamage);
+ const point=impact||V(player.x+direction.x*distance,player.y+direction.y*distance,player.z+direction.z*distance);
+ target.flash=.12;hitFlash=headshot?.20:.12;lastHitHeadshot=headshot;burst(point.x,point.y,point.z,headshot?HEADSHOT_COLOR:palettes.cyan,headshot?7:4);
+ if(headshot){playHeadshotSound();headshotTimer=.8;setHudText('headshotNotice',target.hp<=0?'爆头 +50':'爆头 · 4倍伤害');}else tone(1300,.04,'sine',.035,300);
+ const flameDefeated=spreadFlameDamage(target,bulletDamage);xpAwardDeferral++;
+ try{if(target.hp<=0)defeatEnemy(target,headshot);for(const enemy of flameDefeated)defeatEnemy(enemy);}
+ finally{xpAwardDeferral--;if(!xpAwardDeferral&&state==='playing'&&runProgress.pendingLevels.length)openLevelUpgrade();}
+ return true;
+}
+function gatlingMuzzle(side){
+ const forwardX=Math.sin(player.yaw),forwardZ=-Math.cos(player.yaw),rightX=Math.cos(player.yaw),rightZ=Math.sin(player.yaw),offset=side*.285;
+ return V(player.x+rightX*offset+forwardX*.88,player.feetY+1.03,player.z+rightZ*offset+forwardZ*.88);
+}
+function shootGatling(){
+ if(state!=='playing'||!runProgress.gatling||activeWeapon!=='gatling'||weaponSwitch||cooldown>1e-9)return false;
+ const lock=findGatlingTarget();if(!lock)return false;
+ const side=gatlingShotIndex++%2===0?-1:1,muzzle=gatlingMuzzle(side),aim=sub(lock.point,muzzle),direction=norm(aim);
+ if(length(aim)<.05)return false;
+ cooldown=GATLING_FIRE_INTERVAL;gatlingCooldown=cooldown;shots++;shotFlash=.05;gatlingKick=.045;kick=Math.min(.06,kick+.012);gatlingSpin+=.44;playCombatBuffer('shot',.20,side*.035);
+ if(gatlingBullets.length>=GATLING_PROJECTILE_LIMIT)gatlingBullets.shift();
+ gatlingBullets.push({x:muzzle.x,y:muzzle.y,z:muzzle.z,dx:direction.x,dy:direction.y,dz:direction.z,target:lock.enemy,age:0,side});
+ return true;
+}
+function updateGatlingBullets(dt){
+ if(dt<=0||!gatlingBullets.length)return;
+ for(let i=gatlingBullets.length-1;i>=0;i--){
+  const bullet=gatlingBullets[i],old=V(bullet.x,bullet.y,bullet.z);bullet.age+=dt;
+  if(!bullet.target||bullet.target.hp<=0||!enemies.includes(bullet.target)){const replacement=findGatlingTarget(old,36);bullet.target=replacement?.enemy||null;}
+  if(!bullet.target||bullet.age>4){gatlingBullets.splice(i,1);continue;}
+  const targetPoint=gatlingHeadPoint(bullet.target),desired=norm(sub(targetPoint,old)),turn=1-Math.exp(-GATLING_TURN_RATE*dt),direction=norm(V(bullet.dx+(desired.x-bullet.dx)*turn,bullet.dy+(desired.y-bullet.dy)*turn,bullet.dz+(desired.z-bullet.dz)*turn));
+  const step=Math.min(GATLING_BULLET_SPEED*dt,length(sub(targetPoint,old))),next=V(old.x+direction.x*step,old.y+direction.y*step,old.z+direction.z*step),wallHit=wallDistance(old,direction);
+  if(wallHit<=step){burst(old.x+direction.x*wallHit,old.y+direction.y*wallHit,old.z+direction.z*wallHit,[.36,.88,1],3);gatlingBullets.splice(i,1);continue;}
+  const toTarget=sub(targetPoint,old),along=clamp(dot(toTarget,direction),0,step),closest=V(old.x+direction.x*along,old.y+direction.y*along,old.z+direction.z*along),radius=bullet.target.type==='doubao'?1.05:bullet.target.bossArchetype==='shieldDog'?1.2:enemySettings(bullet.target).radius*.72;
+  bullet.x=next.x;bullet.y=next.y;bullet.z=next.z;bullet.dx=direction.x;bullet.dy=direction.y;bullet.dz=direction.z;
+  if(length(sub(closest,targetPoint))<=radius||length(sub(next,targetPoint))<=.12){const target=bullet.target,point=V(targetPoint.x,targetPoint.y,targetPoint.z),ray=norm(sub(point,V(player.x,player.y,player.z)));gatlingBullets.splice(i,1);applyPlayerBulletHit(target,ray,length(sub(point,V(player.x,player.y,player.z))),true,.5,point);if(state!=='playing')return;}
+ }
+}
 function updateEnemyBurns(dt){
  if(state!=='playing'||dt<=0)return;
  const defeated=[];
@@ -1101,6 +1160,7 @@ function shoot(){
  if(state!=='playing')return;
  if(!touchDevice()&&document.pointerLockElement!==canvas){pause();return;}
  if(weaponSwitch)return;
+  if(activeWeapon==='gatling'){shootGatling();return;}
  if(activeWeapon==='knife'){swingKnife();return;}
  if(state!=='playing'||cooldown>1e-9||reload>0)return;
  if(!ammo){reloadGun();return;}
@@ -1109,23 +1169,7 @@ function shoot(){
  const direction=getShotDirection();
  const {wall,distance:nearest,target,zone:targetZone}=traceEnemy(direction);
  addAKTracer(direction,nearest);
- if(target){
-  const headshot=targetZone==='head';
-  hits++;if(headshot)headshots++;
-  const bulletDamage=getBulletDamage(headshot),dealtDamage=Math.min(Math.max(0,target.hp),bulletDamage);target.hp=healthAfterDamage(target.hp,bulletDamage);if(dealtDamage>0)healFromBullet(dealtDamage);
-  target.flash=.12;hitFlash=headshot?.20:.12;lastHitHeadshot=headshot;
-  burst(player.x+direction.x*nearest,player.y+direction.y*nearest,player.z+direction.z*nearest,headshot?HEADSHOT_COLOR:palettes.cyan,headshot?7:4);
-  if(headshot){
-   playHeadshotSound();headshotTimer=.8;
-   setHudText('headshotNotice',target.hp<=0?'爆头 +50':'爆头 · 4倍伤害');
-  }else tone(1300,.04,'sine',.035,300);
-  const flameDefeated=spreadFlameDamage(target,bulletDamage);
-  // Resolve all kills caused by one shot before opening an upgrade. Otherwise
-  // the first level-up could pause the game and discard the remaining kill XP.
-  xpAwardDeferral++;
-  try{if(target.hp<=0)defeatEnemy(target,headshot);for(const enemy of flameDefeated)defeatEnemy(enemy);}
-  finally{xpAwardDeferral--;if(!xpAwardDeferral&&state==='playing'&&runProgress.pendingLevels.length)openLevelUpgrade();}
- }else if(wall<90)burst(player.x+direction.x*wall,player.y+direction.y*wall,player.z+direction.z*wall,[.9,.8,.5],5);
+  if(target)applyPlayerBulletHit(target,direction,nearest,targetZone==='head');else if(wall<90)burst(player.x+direction.x*wall,player.y+direction.y*wall,player.z+direction.z*wall,[.9,.8,.5],5);
  if(state==='playing')applyAKRecoil();
  if(ammo===0&&reserve===0){reserve=60;showNotice('紧急弹药已补给 · 按 R 换弹');}
  updateHUD();
@@ -1208,7 +1252,7 @@ function updateDefenseHUD(){
  setHudText('defenseStatus',items.join(' · '));setHudClass('defenseStatus','hidden',!player||state==='menu');
 }
 function updateHUD(){updateDefenseHUD();
- const bulletDamage=getBulletDamage();setHudText('bulletDamageValue',Math.round(bulletDamage*100)/100);setHudText('headDamageValue',Math.round(getBulletDamage(true)*100)/100);setHudClass('bulletDamagePanel','hidden',activeWeapon!=='ak');
+  const damageScale=activeWeapon==='gatling'?.5:1,bulletDamage=getBulletDamage()*damageScale;setHudText('bulletDamageValue',Math.round(bulletDamage*100)/100);setHudText('headDamageValue',Math.round(getBulletDamage(true)*damageScale*100)/100);setHudClass('bulletDamagePanel','hidden',activeWeapon==='knife');
  updateFreezeHUD();
  const boss=enemies.find(enemy=>enemyKind(enemy)==='boss'&&enemy.hp>0),bossName=boss?.type==='doubao'?'豆包 · 关卡大 Boss':boss?.bossArchetype==='shieldDog'?'刀盾狗 Boss':'大火龙奶娃';setHudText('bossHealthName',bossName);setHudClass('bossHealthPanel','hidden',!boss);
  if(boss){setHudText('bossHealthValue',Math.ceil(boss.hp));setHudText('bossHealthMax',Math.ceil(boss.maxHp));setHudStyle('bossHealthFill','width',clamp(boss.hp/boss.maxHp*100,0,100)+'%');}
@@ -1218,11 +1262,12 @@ function updateHUD(){updateDefenseHUD();
  setHudText('maxHealth',getMaxHealth());
  const bleedSeconds=Math.ceil(Math.max(0,bleedRemaining()-1e-9));
  setHudClass('bleedStatus','hidden',bleedSeconds===0);setHudText('bleedStatus',bleedSeconds?`流血 · ${Number((player.bleedDamage??BLEED_DAMAGE).toFixed(2))}点/秒 · 剩余${bleedSeconds}秒`:'');
- const knife=activeWeapon==='knife';
- setHudText('weaponName',knife?'M9 BAYONET':'AK-47');setHudText('weaponKind',knife?'近战刺刀':'自动步枪');
- setHudText('weaponAction',weaponSwitch?'切换中':knife?'左键 挥砍':'R 换弹');setHudClass('ammoPanel','knife',knife);
- setHudText('switchWeaponBtn',knife?'切枪':'切刀');
- setHudText('health',Math.ceil(player.hp));setHudStyle('healthFill','width',clamp(player.hp/getMaxHealth()*100,0,100)+'%');setHudStyle('healthFill','background',player.hp<getMaxHealth()*.3?'#ff6767':'');setHudText('ammo',knife?'∞':String(ammo).padStart(2,'0'));setHudText('reserve',String(reserve).padStart(3,'0'));setHudText('wave','无尽');setHudText('remaining',String(enemies.length).padStart(2,'0'));setHudText('score',String(score).padStart(5,'0'));setHudText('timer',formatTime(elapsed));setHudClass('reloadBar','hidden',reload<=0);setHudStyle('reloadFill','width',clamp(Math.round((1-reload/getReloadDuration())*100),0,100)+'%');}
+  const knife=activeWeapon==='knife',gatling=activeWeapon==='gatling';
+  setHudText('weaponName',knife?'M9 BAYONET':gatling?'双持加特林':'AK-47');setHudText('weaponKind',knife?'近战刺刀':gatling?'自动锁头 · 全自动':'自动步枪');
+  setHudText('weaponAction',weaponSwitch?'切换中':knife?'左键 挥砍':gatling?'自动追踪射击':'R 换弹');setHudClass('ammoPanel','knife',knife);setHudClass('ammoPanel','gatling',gatling);
+  setHudText('switchWeaponBtn',knife?(runProgress.gatling?'切加特林':'切枪'):'切刀');
+  $('ammoPanel').querySelector('.weapon-switch-hint').textContent=runProgress.gatling?'1 双持加特林 · 3 M9 · Q 冰冻':'1 AK · 3 M9 · Q 冰冻';
+  setHudText('health',Math.ceil(player.hp));setHudStyle('healthFill','width',clamp(player.hp/getMaxHealth()*100,0,100)+'%');setHudStyle('healthFill','background',player.hp<getMaxHealth()*.3?'#ff6767':'');setHudText('ammo',knife||gatling?'∞':String(ammo).padStart(2,'0'));setHudText('reserve',gatling?'∞':String(reserve).padStart(3,'0'));setHudText('wave','无尽');setHudText('remaining',String(enemies.length).padStart(2,'0'));setHudText('score',String(score).padStart(5,'0'));setHudText('timer',formatTime(elapsed));setHudClass('reloadBar','hidden',reload<=0);setHudStyle('reloadFill','width',clamp(Math.round((1-reload/getReloadDuration())*100),0,100)+'%');}
 const DOG_WINDUP=.16,DOG_STRIKE=.08,DOG_RECOVER=.24,DOG_HIT_TIME=.0175,DOG_ATTACK_RANGE=2.22,DOG_HIT_RANGE=2.34;
 const MILK_CHARGE=.24,MILK_RELEASE=.20,MILK_ORB_SPEED=35,MILK_ATTACK_RATE=1.5;
 const MILK_BURST_INTERVAL=.12;
@@ -1910,7 +1955,7 @@ function updateEnemyCombat(dt,moveScale){
  }
 }
 
-function update(dt){if(state!=='playing')return;if(!touchDevice()&&document.pointerLockElement!==canvas){pause();return;}elapsed+=dt;recordPlayerTrail();updateFlameLinks();updateBleeding();if(state!=='playing'){updateHUD();return;}updateAKTracers(dt);if(recoilShot&&elapsed-recoilLastShot>=AK_RECOIL_RESET_DELAY)resetAKRecoil();updateWeaponState(dt);if(state!=='playing'){updateHUD();return;}cooldown=Math.max(0,cooldown-dt);shotFlash=Math.max(0,shotFlash-dt);hitFlash=Math.max(0,hitFlash-dt);headshotTimer=Math.max(0,headshotTimer-dt);damageFlash=Math.max(0,damageFlash-dt);kick*=Math.exp(-dt*14);noticeTimer-=dt;if(noticeTimer<0)$('notice').classList.remove('visible');
+function update(dt){if(state!=='playing')return;if(!touchDevice()&&document.pointerLockElement!==canvas){pause();return;}elapsed+=dt;recordPlayerTrail();updateFlameLinks();updateBleeding();if(state!=='playing'){updateHUD();return;}updateAKTracers(dt);if(recoilShot&&elapsed-recoilLastShot>=AK_RECOIL_RESET_DELAY)resetAKRecoil();updateWeaponState(dt);if(state!=='playing'){updateHUD();return;}cooldown=Math.max(0,cooldown-dt);gatlingCooldown=Math.max(0,gatlingCooldown-dt);gatlingKick*=Math.exp(-dt*13);gatlingSpin=Math.max(0,gatlingSpin-dt*5);shotFlash=Math.max(0,shotFlash-dt);hitFlash=Math.max(0,hitFlash-dt);headshotTimer=Math.max(0,headshotTimer-dt);damageFlash=Math.max(0,damageFlash-dt);kick*=Math.exp(-dt*14);noticeTimer-=dt;if(noticeTimer<0)$('notice').classList.remove('visible');
  if(reload>0){reload-=dt;if(reload<=0){let n=Math.min(30-ammo,reserve);ammo+=n;reserve-=n;tone(560,.07,'square',.025,-200);}}
  if(keys.ArrowLeft)player.yaw-=dt*1.8;if(keys.ArrowRight)player.yaw+=dt*1.8;if(keys.ArrowUp)player.pitch=clamp(player.pitch+dt*1.4,-1.05,1.05);if(keys.ArrowDown)player.pitch=clamp(player.pitch-dt*1.4,-1.05,1.05);
  player.crouching=!!(keys.ShiftLeft||keys.ShiftRight);const targetEyeHeight=player.crouching?CROUCHING_EYE_HEIGHT:STANDING_EYE_HEIGHT;
@@ -1918,12 +1963,12 @@ function update(dt){if(state!=='playing')return;if(!touchDevice()&&document.poin
  const forward=Number(!!keys.KeyW)-Number(!!keys.KeyS)-touchMove.z,strafe=Number(!!keys.KeyD)-Number(!!keys.KeyA)+touchMove.x;
  movePlayer(dt,forward,strafe);
  // Keep jump and floor collision independent of the changing camera height.
- player.vy-=dt*13;player.feetY+=player.vy*dt;if(player.feetY<=0){player.feetY=0;player.vy=0;player.ground=true;}player.y=player.feetY+player.eyeHeight;if(fire)shoot();if(state!=='playing'){updateHUD();return;}updateAKViewRecoil(dt);
+  player.vy-=dt*13;player.feetY+=player.vy*dt;if(player.feetY<=0){player.feetY=0;player.vy=0;player.ground=true;}player.y=player.feetY+player.eyeHeight;if(activeWeapon==='gatling')shootGatling();else if(fire)shoot();if(state!=='playing'){updateHUD();return;}updateAKViewRecoil(dt);
  updateBossChests(dt);if(state!=='playing'){updateHUD();return;}
  updateEnemyBurns(dt);if(state!=='playing'){updateHUD();return;}
  const enemyFrame=advanceFreezeSkill(dt);
  updateEnemyCombat(enemyFrame.slowDt,.5);if(state!=='playing'){updateHUD();return;}
- updateEnemyCombat(enemyFrame.normalDt,1);
+  updateEnemyCombat(enemyFrame.normalDt,1);if(state==='playing')updateGatlingBullets(dt);
  if(state!=='playing'){updateHUD();return;}
  for(let i=particles.length-1;i>=0;i--){let p=particles[i];p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;p.vy-=dt*7;if(p.life<=0)particles.splice(i,1);}
  for(let i=pickups.length-1;i>=0;i--){let p=pickups[i];if(p.dropLifetime>0){p.dropAge=(p.dropAge||0)+dt;if(p.dropAge>=p.dropLifetime-1e-9){pickups.splice(i,1);continue;}}p.phase+=dt;if(Math.hypot(player.x-p.x,player.z-p.z)<1.7){if(p.kind==='upgrade'){pickups.splice(i,1);collectUpgradeReward();tone(850,.2,'sine',.04,300);updateHUD();return;}const heal=p.health||25,rounds=p.ammo||30;player.hp=Math.min(getMaxHealth(),player.hp+heal);reserve+=rounds;pickups.splice(i,1);showNotice(`补给已拾取 · 生命 +${heal} / 弹药 +${rounds}`,2);tone(700,.2,'sine',.04,350);}}
@@ -2656,6 +2701,69 @@ function drawGun(vp,presentation=0){
   }
 }
 
+let gatlingGeometryCache=null,gatlingViewMesh=null,gatlingFlashMesh=null;
+const gatlingViewMatrix=new Float32Array(16),gatlingViewEye=V(),gatlingFlashMatrixA=new Float32Array(16),gatlingFlashMatrixB=new Float32Array(16);
+function gatlingGeometry(){
+ if(gatlingGeometryCache)return gatlingGeometryCache;
+ const a=[],dark=[.045,.055,.059],steel=[.25,.29,.30],edge=[.43,.48,.48],red=[.64,.075,.07],grip=[.12,.14,.14],fabric=viewmodelHandColors.fabric,knuckle=viewmodelHandColors.knuckle;
+ for(const side of [-1,1]){
+  const x=side*.285,y=-.22,z=-.27;
+  box(a,x,y,z,.225,.18,.30,dark);box(a,x,y+.075,z+.025,.20,.035,.24,steel);box(a,x,y-.105,z+.02,.12,.12,.14,grip);
+  box(a,x,y+.005,z+.165,.11,.10,.075,red);box(a,x,y+.02,z+.213,.07,.018,.02,edge);
+  for(let barrel=0;barrel<6;barrel++){const angle=barrel*Math.PI/3;akTube(a,x+Math.cos(angle)*.052,y+Math.sin(angle)*.052,z-.49,.018,.50,barrel%2?steel:edge,8);}
+  akTube(a,x,y,z-.755,.029,.024,dark,10);
+  box(a,x,y-.17,z+.02,.105,.08,.12,grip);box(a,x,y-.206,z+.06,.13,.022,.10,dark);
+  milkEllipsoid(a,x,y-.005,z+.095,.085,.045,.085,fabric,8,4);
+  for(let finger=0;finger<3;finger++){const fy=y-.045-finger*.025;milkLimb(a,[x+side*.055,fy,z+.12],[x+side*.045,fy-.012,z+.19],.013,.012,fabric,6);}
+  milkLimb(a,[x-side*.018,y-.012,z+.13],[x-side*.062,y+.012,z+.15],.018,.016,knuckle,6);
+ }
+ for(const side of [-1,1]){
+  milkLimb(a,[side*.60,-.76,.28],[side*.48,-.55,.12],.087,.073,viewmodelHandColors.sleeve,10);
+  milkLimb(a,[side*.48,-.55,.12],[side*.31,-.29,-.04],.071,.061,viewmodelHandColors.sleeveLight,10);
+  box(a,side*.53,-.62,.20,.16,.18,.16,viewmodelHandColors.sleeve,0,side*-.35);
+ }
+ gatlingGeometryCache=new Float32Array(a);return gatlingGeometryCache;
+}
+function gatlingUpdateModel(presentation=0){
+ const hide=presentation*presentation*(3-2*presentation),moving=moveAmount||0,wobble=Math.sin(gatlingSpin)*gatlingKick;
+ const x=Math.sin(bob)*.009*moving,y=-.31-Math.abs(Math.cos(bob))*.009*moving+hide*.12,z=-.72+gatlingKick*.22+hide*.20;
+ const yaw=wobble*.2,roll=-.025-wobble*.13+hide*.34,pitch=gatlingKick*.26,cy=Math.cos(yaw),sy=Math.sin(yaw),cr=Math.cos(roll),sr=Math.sin(roll),cp=Math.cos(pitch),sp=Math.sin(pitch),m=gatlingViewMatrix;
+ m[0]=cy*cr;m[1]=cy*sr;m[2]=-sy;m[3]=0;m[4]=-sr*cp+sy*cr*sp;m[5]=cr*cp+sy*sr*sp;m[6]=cy*sp;m[7]=0;m[8]=sr*sp+sy*cr*cp;m[9]=-cr*sp+sy*sr*cp;m[10]=cy*cp;m[11]=0;m[12]=x;m[13]=y;m[14]=z;m[15]=1;return m;
+}
+function drawGatling(vp,presentation=0){
+ if(!gatlingViewMesh){gatlingViewMesh=mesh(gatlingGeometry());const flash=[];box(flash,0,0,0,1,1,1,[1,.29,.045],1);gatlingFlashMesh=mesh(flash);}
+ const model=gatlingUpdateModel(presentation);draw(gatlingViewMesh,vp,gatlingViewEye,0,model,0);
+ if(shotFlash>0&&!weaponSwitch){const side=gatlingShotIndex%2===1?-1:1;draw(gatlingFlashMesh,vp,gatlingViewEye,0,akScaledModel(gatlingFlashMatrixA,model,side*.285,-.22,-1.055,.10+rnd(0,.035),.10+rnd(0,.035),.18),0);draw(gatlingFlashMesh,vp,gatlingViewEye,0,akScaledModel(gatlingFlashMatrixB,model,side*.285,-.22,-.985,.20,.025,.09),0);}
+}
+
+let playerAvatarGpu=null;
+const playerAvatarMatrix=new Float32Array(16),playerAvatarMotionMatrix=new Float32Array(16);
+function preparePlayerAvatar(){
+ if(playerAvatarGpu)return;
+ const core=[],head=[],arms=[[],[]],legs=[[],[]],guns=[],uniform=[.105,.14,.16],vest=[.17,.205,.22],pants=[.085,.105,.12],skin=[.48,.36,.28],helmet=[.12,.15,.17],steel=[.25,.29,.30],dark=[.045,.055,.059],red=[.64,.075,.07];
+ box(core,0,.98,0,.56,.78,.34,uniform);box(core,0,1.06,.177,.39,.48,.035,vest);box(core,0,.79,.199,.26,.10,.018,dark);box(core,0,1.29,.202,.18,.12,.018,[.26,.30,.29]);
+ milkEllipsoid(head,0,1.68,.015,.205,.255,.205,skin,12,6);milkEllipsoid(head,0,1.79,-.005,.235,.175,.228,helmet,12,6);box(head,0,1.65,.207,.24,.045,.035,dark);
+ for(const side of [-1,1]){
+  const leg=legs[side<0?0:1],arm=arms[side<0?0:1];
+  milkLimb(leg,[side*.16,.65,0],[side*.17,.22,.015],.115,.092,pants,8);milkLimb(leg,[side*.17,.22,.015],[side*.17,.075,.07],.092,.075,dark,8);box(leg,side*.17,.055,.12,.16,.07,.24,dark);
+  milkLimb(arm,[side*.27,1.26,.02],[side*.34,1.13,.27],.098,.083,uniform,8);milkLimb(arm,[side*.34,1.13,.27],[side*.28,1.13,.53],.079,.062,skin,8);milkEllipsoid(arm,side*.28,1.13,.55,.095,.071,.105,dark,8,4);
+  for(let finger=0;finger<3;finger++)milkLimb(arm,[side*.28+side*(finger-.8)*.035,1.11,.58],[side*.28+side*(finger-.8)*.035,1.09,.68],.018,.016,dark,6);
+  const x=side*.285,y=1.12,z=.60;
+  box(guns,x,y,z,.22,.18,.30,dark);box(guns,x,y+.075,z+.02,.20,.035,.24,steel);box(guns,x,y+.005,z+.16,.11,.10,.07,red);box(guns,x,y-.17,z+.02,.105,.12,.14,dark);
+  for(let barrel=0;barrel<6;barrel++){const angle=barrel*Math.PI/3;akTube(guns,x+Math.cos(angle)*.052,y+Math.sin(angle)*.052,z+.49,.018,.50,barrel%2?steel:[.42,.46,.47],8);}
+ }
+ playerAvatarGpu={core:mesh(core),head:mesh(head),arms:arms.map(data=>mesh(data)),legs:legs.map(data=>mesh(data)),guns:mesh(guns)};
+}
+function setPlayerAvatarMatrix(out,dx=0,dy=0,dz=0,angle=player.yaw+Math.PI){
+ const c=Math.cos(angle),s=Math.sin(angle);out[0]=c;out[1]=0;out[2]=-s;out[3]=0;out[4]=0;out[5]=1;out[6]=0;out[7]=0;out[8]=s;out[9]=0;out[10]=c;out[11]=0;out[12]=player.x+c*dx+s*dz;out[13]=player.feetY+dy;out[14]=player.z-s*dx+c*dz;out[15]=1;return out;
+}
+function drawThirdPersonPlayer(vp,eye){
+ if(!runProgress.gatling||activeWeapon!=='gatling')return;
+ preparePlayerAvatar();const stride=Math.sin(bob)*.055*moveAmount,lift=Math.abs(Math.cos(bob))*.018*moveAmount,base=setPlayerAvatarMatrix(playerAvatarMatrix,0,lift,0);
+ draw(playerAvatarGpu.core,vp,eye,.9,base,0);draw(playerAvatarGpu.head,vp,eye,.9,base,0);draw(playerAvatarGpu.guns,vp,eye,.9,base,0);
+ for(let i=0;i<2;i++){const side=i===0?-1:1;draw(playerAvatarGpu.legs[i],vp,eye,.9,setPlayerAvatarMatrix(playerAvatarMotionMatrix,side*.018,Math.max(0,stride*side),stride*side*.35),0);draw(playerAvatarGpu.arms[i],vp,eye,.9,setPlayerAvatarMatrix(playerAvatarMotionMatrix,side*.006,gatlingKick*.14+lift,stride*.08),0);}
+}
+
 // M9-inspired game view model; visual prop only. Insert inside the existing game IIFE.
 // Uses the existing box(), mesh(), draw(), V(), bob and moveAmount.
 // presentation: 0 = held, 1 = fully below the screen. Animate 1 -> 0 to draw;
@@ -3292,15 +3400,21 @@ function getViewShake(){
  // Presentation only: never change player aim, bullet recoil or the fixed reticle.
  return {yaw:Math.sin(phase)*.33*Math.PI/180*strength,pitch:Math.sin(phase*1.13+.7)*.605*Math.PI/180*strength};
 }
-function render(){resize();updateCrosshair();updateFreezeHUD();const w=canvas.width,h=canvas.height,shake=state==='menu'?null:getViewShake();gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.disable(gl.DEPTH_TEST);gl.useProgram(skyProgram);let ap=skyLoc.aP;for(let i=0;i<4;i++)gl.disableVertexAttribArray(i);gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);gl.enableVertexAttribArray(ap);gl.vertexAttribPointer(ap,2,gl.FLOAT,false,8,0);gl.uniform3f(skyLoc.uHorizon,...currentMap.sky[0]);gl.uniform3f(skyLoc.uZenith,...currentMap.sky[1]);gl.uniform1f(skyLoc.uPitch,state==='menu'?.02:(player?.pitch||0)+shake.pitch);gl.drawArrays(gl.TRIANGLES,0,6);gl.enable(gl.DEPTH_TEST);
- let eye,yaw,pitch;if(state==='menu'){eye=V(0,3.5,23);yaw=.18+Math.sin(time*.075)*.16;pitch=-.06;}else{eye=V(player.x,player.y+Math.sin(bob*2)*.018*moveAmount,player.z);yaw=player.yaw+shake.yaw;pitch=player.pitch+shake.pitch;}
+function isThirdPersonGatling(){return !!runProgress.gatling&&activeWeapon==='gatling';}
+function render(){resize();updateCrosshair();updateFreezeHUD();const w=canvas.width,h=canvas.height,shake=state==='menu'?null:getViewShake();gl.viewport(0,0,w,h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.disable(gl.DEPTH_TEST);gl.useProgram(skyProgram);let ap=skyLoc.aP;for(let i=0;i<4;i++)gl.disableVertexAttribArray(i);gl.bindBuffer(gl.ARRAY_BUFFER,skyBuffer);gl.enableVertexAttribArray(ap);gl.vertexAttribPointer(ap,2,gl.FLOAT,false,8,0);gl.uniform3f(skyLoc.uHorizon,...currentMap.sky[0]);gl.uniform3f(skyLoc.uZenith,...currentMap.sky[1]);gl.uniform1f(skyLoc.uPitch,state==='menu'?.02:(player?.pitch||0)-(isThirdPersonGatling()?.16:0)+shake.pitch);gl.drawArrays(gl.TRIANGLES,0,6);gl.enable(gl.DEPTH_TEST);
+  let eye,yaw,pitch;if(state==='menu'){eye=V(0,3.5,23);yaw=.18+Math.sin(time*.075)*.16;pitch=-.06;}else if(isThirdPersonGatling()){
+   const anchor=V(player.x,player.feetY+1.28,player.z),forwardX=Math.sin(player.yaw),forwardZ=-Math.cos(player.yaw),desired=V(player.x-forwardX*4.4,player.feetY+2.45,player.z-forwardZ*4.4),offset=sub(desired,anchor),lengthToCamera=length(offset),wall=wallDistance(anchor,norm(offset)),distance=Math.min(lengthToCamera,Math.max(.72,wall-.28));
+   eye=V(anchor.x+offset.x*distance/lengthToCamera,anchor.y+offset.y*distance/lengthToCamera,anchor.z+offset.z*distance/lengthToCamera);yaw=player.yaw+shake.yaw;pitch=player.pitch-.16+shake.pitch;
+  }else{eye=V(player.x,player.y+Math.sin(bob*2)*.018*moveAmount,player.z);yaw=player.yaw+shake.yaw;pitch=player.pitch+shake.pitch;}
  let proj=perspective(76*Math.PI/180,w/h),vp=multiply(proj,view(eye,yaw,pitch));draw(arena,vp,eye);effectData.length=0;if(state==='menu'){
   drawMilkModel({x:5.4,z:14,y:1.15,yaw:-.35+Math.sin(time*.3)*.18,flash:0,phase:1,walking:false},vp,eye);
   drawDogModel({x:2.9,z:16,y:.8,yaw:-.25,flash:0,phase:2,walking:false,clawPhase:'idle',clawProgress:0},vp,eye);
   drawWitchModel({x:7.3,z:13,y:1.05,yaw:-.45,flash:0,phase:3,walking:false,supportPulse:0},vp,eye);
- }else{
-  for(const e of enemies){const kind=enemyKind(e);if(kind==='dog')drawDogModel(e,vp,eye);else if(kind==='witch')drawWitchModel(e,vp,eye);else if(e.type==='doubao')drawDoubaoModel(e,vp,eye);else if(kind==='boss')drawBossModel(e,vp,eye);else drawMilkModel(e,vp,eye);drawEnemyEffects(e,vp,eye);drawEnemyFreeze(e,vp,eye);}
-  for(const b of bullets){if(b.kind==='doubaoOrb')drawDoubaoOrb(b,vp,eye);else if(b.kind==='bossFire')drawBossFire(b.x,b.y,b.z,vp,eye,b.phase||0);else drawMilkOrb(b.x,b.y,b.z,vp,eye,b.phase||0);appendOrbTrail(b,effectData,eye);}
+  }else{
+   if(isThirdPersonGatling())drawThirdPersonPlayer(vp,eye);
+   for(const e of enemies){const kind=enemyKind(e);if(kind==='dog')drawDogModel(e,vp,eye);else if(kind==='witch')drawWitchModel(e,vp,eye);else if(e.type==='doubao')drawDoubaoModel(e,vp,eye);else if(kind==='boss')drawBossModel(e,vp,eye);else drawMilkModel(e,vp,eye);drawEnemyEffects(e,vp,eye);drawEnemyFreeze(e,vp,eye);}
+   for(const b of bullets){if(b.kind==='doubaoOrb')drawDoubaoOrb(b,vp,eye);else if(b.kind==='bossFire')drawBossFire(b.x,b.y,b.z,vp,eye,b.phase||0);else drawMilkOrb(b.x,b.y,b.z,vp,eye,b.phase||0);appendOrbTrail(b,effectData,eye);}
+   for(const b of gatlingBullets)box(effectData,b.x,b.y,b.z,.055,.055,.28,[.36,.88,1],1,Math.atan2(b.dx,b.dz));
   for(const chest of bossChests)drawBossChest(chest,vp,eye);
   for(const p of witchPotions)if(p.kind!=='heal')drawWitchPotion(p,vp,eye);
   for(const s of witchSplashes)if(s.kind!=='heal')drawWitchSplash(s,vp,eye);
@@ -3312,7 +3426,7 @@ function render(){resize();updateCrosshair();updateFreezeHUD();const w=canvas.wi
  }
  if(state!=='menu'){syncAKTracerMuzzles(eye,yaw,pitch);drawAKTracers(effectData,eye);}
  drawEffects(vp,eye);
- if(state!=='menu'){gl.clear(gl.DEPTH_BUFFER_BIT);const weaponVP=perspective(68*Math.PI/180,w/h),presentation=weaponPresentation();if(activeWeapon==='knife')drawKnife(weaponVP,presentation,knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0);else drawGun(weaponVP,presentation);if(time-lastMapDraw>=1/30){drawMap();lastMapDraw=time;}}
+   if(state!=='menu'){gl.clear(gl.DEPTH_BUFFER_BIT);const weaponVP=perspective(68*Math.PI/180,w/h),presentation=weaponPresentation();if(activeWeapon==='knife')drawKnife(weaponVP,presentation,knifeAttackTimer>0?1-knifeAttackTimer/KNIFE_ATTACK_DURATION:0);else if(activeWeapon==='gatling'){if(!isThirdPersonGatling())drawGatling(weaponVP,presentation);}else drawGun(weaponVP,presentation);if(time-lastMapDraw>=1/30){drawMap();lastMapDraw=time;}}
  setHudClass('hitmarker','active',state==='playing'&&hitFlash>0);setHudClass('hitmarker','headshot',lastHitHeadshot&&hitFlash>0);setHudClass('headshotNotice','visible',state==='playing'&&headshotTimer>0);setHudStyle('damage','opacity',String(damageFlash)); }
 function drawMap(){let ctx=mini,W=160,s=2.4;ctx.clearRect(0,0,W,W);ctx.fillStyle='rgba(12,22,24,.82)';ctx.fillRect(0,0,W,W);ctx.save();ctx.translate(80,80);ctx.fillStyle='#3c4b4d';for(let b of walls)ctx.fillRect(b.x*s-b.w*s/2,b.z*s-b.d*s/2,b.w*s,b.d*s);ctx.strokeStyle='#2e3b3e';ctx.lineWidth=.5;for(let i=-60;i<=60;i+=20){ctx.beginPath();ctx.moveTo(i,-70);ctx.lineTo(i,70);ctx.moveTo(-70,i);ctx.lineTo(70,i);ctx.stroke();}for(let e of enemies){ctx.fillStyle=enemyKind(e)==='witch'?'#bd89ff':enemyKind(e)==='dog'?'#ffbe60':'#ff7777';ctx.beginPath();ctx.arc(e.x*s,e.z*s,2.6,0,Math.PI*2);ctx.fill();}for(let p of pickups){ctx.fillStyle='#b9ef54';ctx.fillRect(p.x*s-2,p.z*s-2,4,4);}ctx.translate(player.x*s,player.z*s);ctx.rotate(player.yaw);ctx.fillStyle='#d5fa52';ctx.beginPath();ctx.moveTo(0,-5);ctx.lineTo(3.6,4);ctx.lineTo(0,2);ctx.lineTo(-3.6,4);ctx.closePath();ctx.fill();ctx.restore();}
 function resize(){const {width,height}=getGameSize(),d=Math.min(window.devicePixelRatio||1,MAX_RENDER_DPR,Math.sqrt(MAX_RENDER_PIXELS/(width*height))),w=Math.max(1,Math.floor(width*d)),h=Math.max(1,Math.floor(height*d));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}}
@@ -3325,10 +3439,10 @@ function look(dx,dy,touch=false){if(state!=='playing')return;const speed=.0024*(
 function backToMapMenu(){
  resetRunProgress();
  state='menu';clearBleeding();clearWitchPotions();clearEnemyRevival();resetFreezeSkill();resetBossState();resetEnemyNavigation();spawnTimer=0;spawned=0;nextEnemyId=0;cancelLock();clearTouchInput();document.exitPointerLock?.();
- akTracers.length=0;enemies=[];bullets=[];particles=[];pickups=[];fire=false;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;headshotTimer=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;weaponSwitch=null;queuedWeapon=null;activeWeapon='ak';player=null;
+ akTracers.length=0;gatlingBullets.length=0;enemies=[];bullets=[];particles=[];pickups=[];fire=false;reload=0;cooldown=0;transition=0;shotFlash=0;hitFlash=0;headshotTimer=0;damageFlash=0;kick=0;akViewRecoilPitch=0;moveAmount=0;weaponSwitch=null;queuedWeapon=null;activeWeapon='ak';player=null;
  document.body.classList.remove('playing');$('hud').classList.add('hidden');$('pauseMenu').classList.add('hidden');$('endMenu').classList.add('hidden');$('notice').classList.remove('visible');$('reloadBar').classList.add('hidden');$('menu').classList.remove('hidden');$('menuSurprise').classList.remove('hidden');playMenuMusic();
 }
-for(const [id,button]of CHEST_REWARDS)$(button).addEventListener('click',()=>chooseChestReward(id));
+for(const [id,button]of [...CHEST_REWARDS,GATLING_REWARD])$(button).addEventListener('click',()=>chooseChestReward(id));
 for(let i=0;i<6;i++)$('upgradeChoice'+i).addEventListener('click',()=>chooseLevelUpgrade(i));
 $('mapSelect').addEventListener('change',()=>{if(state!=='menu'||pendingLock){$('mapSelect').value=currentMap.id;return;}activateMap($('mapSelect').value);});
 $('pauseMapBtn').addEventListener('click',backToMapMenu);$('endMapBtn').addEventListener('click',backToMapMenu);
@@ -3358,7 +3472,7 @@ canvas.addEventListener('mousedown',e=>{if(state!=='playing')return;if(e.button=
 document.addEventListener('mouseup',e=>{if(e.button===0)stopFiring();});
 document.addEventListener('contextmenu',e=>{if(state==='playing')e.preventDefault();});
 $('encounterConfirm').addEventListener('click',confirmEncounter);
-document.addEventListener('keydown',e=>{if(state==='intro'){if((e.code==='Enter'||e.code==='Space')&&!e.repeat){e.preventDefault();confirmEncounter();}return;}if(state==='chest'){if(/^Digit[1-6]$/.test(e.code)){e.preventDefault();if(!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey)chooseChestReward(CHEST_REWARDS[Number(e.code.slice(-1))-1][0]);}return;}if(state==='upgrading'){if(/^Digit[1-6]$/.test(e.code)){e.preventDefault();if(!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey)chooseLevelUpgrade(Number(e.code.slice(-1))-1);}return;}if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target?.tagName))return;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Escape','ShiftLeft','ShiftRight'].includes(e.code)&&state==='playing')e.preventDefault();if(e.repeat&&['Escape','KeyP','KeyR','Digit1','Digit3','KeyQ'].includes(e.code))return;if(e.code==='Escape'){if(pendingLock)cancelLock();if(state==='playing')pause();return;}if(e.code==='KeyP'){if(state==='playing')pause();else if(state==='paused')resume();return;}if(state!=='playing')return;keys[e.code]=true;if(!e.ctrlKey&&!e.metaKey&&!e.altKey){if(e.code==='Digit1')requestWeapon('ak');if(e.code==='Digit3')requestWeapon('knife');if(e.code==='KeyQ'){e.preventDefault();castFreezeSkill();}}if(e.code==='KeyR')reloadGun();if(e.code==='Space')jump();if(e.code==='KeyF')startFiring();});
+ document.addEventListener('keydown',e=>{if(state==='intro'){if((e.code==='Enter'||e.code==='Space')&&!e.repeat){e.preventDefault();confirmEncounter();}return;}if(state==='chest'){if(/^Digit[1-7]$/.test(e.code)){e.preventDefault();if(!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey)chooseChestReward(activeChestChoices[Number(e.code.slice(-1))-1]?.[0]);}return;}if(state==='upgrading'){if(/^Digit[1-6]$/.test(e.code)){e.preventDefault();if(!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey)chooseLevelUpgrade(Number(e.code.slice(-1))-1);}return;}if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target?.tagName))return;if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Escape','ShiftLeft','ShiftRight'].includes(e.code)&&state==='playing')e.preventDefault();if(e.repeat&&['Escape','KeyP','KeyR','Digit1','Digit3','KeyQ'].includes(e.code))return;if(e.code==='Escape'){if(pendingLock)cancelLock();if(state==='playing')pause();return;}if(e.code==='KeyP'){if(state==='playing')pause();else if(state==='paused')resume();return;}if(state!=='playing')return;keys[e.code]=true;if(!e.ctrlKey&&!e.metaKey&&!e.altKey){if(e.code==='Digit1')requestWeapon(runProgress.gatling?'gatling':'ak');if(e.code==='Digit3')requestWeapon('knife');if(e.code==='KeyQ'){e.preventDefault();castFreezeSkill();}}if(e.code==='KeyR')reloadGun();if(e.code==='Space')jump();if(e.code==='KeyF')startFiring();});
 document.addEventListener('keyup',e=>{keys[e.code]=false;if(e.code==='KeyF')stopFiring();});
 window.addEventListener('blur',()=>{clearTouchInput();if(state==='playing')pause();});document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTouchInput();if(state==='playing')pause();}});
 const joystick=$('joystick');function joy(e){const r=joystick.getBoundingClientRect(),radius=Math.max(1,(r.width-$('stick').getBoundingClientRect().width)/2-6),sx=e.clientX-r.left-r.width/2,sy=e.clientY-r.top-r.height/2,rotated=isMobilePortrait(),dx=rotated?sy:sx,dy=rotated?-sx:sy,n=Math.hypot(dx,dy),factor=Math.min(1,radius/(n||1));touchMove.x=dx*factor/radius;touchMove.z=dy*factor/radius;$('stick').style.transform=`translate(${dx*factor}px,${dy*factor}px)`;}
