@@ -431,7 +431,7 @@ function resetRunProgress(){
  stopMenuMusic();stopBossMusic();smallEnemyKills=0;Object.assign(encounterState,{dog:false,witch:false,doubaoSpawned:false,level40Health:20800});playerTrail.length=0;$('encounterMenu').classList.add('hidden');
   Object.assign(runProgress,{level:1,xp:0,pendingLevels:[],choices:[],bulletBaseBonus:0,reloadRanks:0,maxHealthBonus:0,damageBonus:0,leechLevel:0,freezeRanks:0,fireBullets:false,fireShield:false,shieldBonus:0,dodgeRanks:0,dodgeCloak:false,damageCloak:false,lastStand:false,lastStandUsed:false,lastStandReadyAt:0,healthConverter:false,converterKills:0,damageCloakReadyAt:0,gatling:false});
  bossChests.length=0;chestRewardPending=false;Object.assign(shieldState,{value:0,regenStart:0,regenElapsed:0,lastHitAt:-Infinity});$('chestMenu').classList.add('hidden');
-  xpAwardDeferral=0;flameLinks.length=0;activeChestChoices=CHEST_REWARDS;gatlingBullets.length=0;gatlingCooldown=0;gatlingSpin=0;gatlingShotIndex=0;gatlingKick=0;$('chestMenu').classList.remove('starting-chest');
+  xpAwardDeferral=0;flameLinks.length=0;activeChestChoices=CHEST_REWARDS;gatlingBullets.length=0;gatlingCooldown=0;gatlingSpin=0;gatlingShotIndex=0;gatlingKick=0;gatlingFacingTarget=null;playerAvatarFacingAngle=Math.PI;$('chestMenu').classList.remove('starting-chest');
  $('upgradeMenu').classList.add('hidden');$('upgradeMenu').classList.remove('major-upgrade');
 }
 function updateProgressHUD(){
@@ -522,7 +522,7 @@ function openBossChest(chest){
 function chooseChestReward(id){
  if(state!=='chest'||!chestRewardPending||!activeChestChoices.some(([reward])=>reward===id)||runProgress[id])return false;
  runProgress[id]=true;
- if(id==='gatling'){activeWeapon='gatling';previousWeapon='knife';weaponSwitch=null;queuedWeapon=null;gatlingBullets.length=0;gatlingCooldown=0;gatlingSpin=0;fire=false;showNotice('开挂已启用 · 第三人称自动锁头',3);tone(980,.18,'sawtooth',.035,-430);}
+ if(id==='gatling'){activeWeapon='gatling';previousWeapon='knife';weaponSwitch=null;queuedWeapon=null;gatlingBullets.length=0;gatlingCooldown=0;gatlingSpin=0;gatlingFacingTarget=null;playerAvatarFacingAngle=Math.PI-player.yaw;fire=false;showNotice('开挂已启用 · 第三人称自动锁头',3);tone(980,.18,'sawtooth',.035,-430);}
  if(id==='fireShield')Object.assign(shieldState,{value:getMaxShield(),regenStart:getMaxShield(),regenElapsed:5,lastHitAt:-Infinity});
  chestRewardPending=false;activeChestChoices=CHEST_REWARDS;for(const [,button]of [...CHEST_REWARDS,GATLING_REWARD])$(button).disabled=true;$('chestMenu').classList.add('hidden');$('chestMenu').classList.remove('starting-chest');
  clearTouchInput();state='paused';$('pauseMenu').classList.remove('hidden');updateHUD();resume();return true;
@@ -559,8 +559,8 @@ const AK_MUZZLE_LOCAL=V(0,.012,-.9145),AK_MUZZLE_FOV_SCALE=Math.tan(38*Math.PI/1
 const TRACER_CORNERS=[[0,-1],[0,1],[1,1],[0,-1],[1,1],[1,-1]];
 const akTracers=[];
 const gatlingBullets=[];
-const GATLING_FIRE_INTERVAL=.13,GATLING_BULLET_SPEED=34,GATLING_LOCK_RANGE=72,GATLING_TURN_RATE=8,GATLING_PROJECTILE_LIMIT=96;
-let gatlingCooldown=0,gatlingSpin=0,gatlingShotIndex=0,gatlingKick=0;
+const GATLING_FIRE_INTERVAL=.13/3,GATLING_BULLET_SPEED=34,GATLING_LOCK_RANGE=72,GATLING_TURN_RATE=8,GATLING_PROJECTILE_LIMIT=96;
+let gatlingCooldown=0,gatlingSpin=0,gatlingShotIndex=0,gatlingKick=0,gatlingFacingTarget=null,playerAvatarFacingAngle=Math.PI;
 let recoilShot=0,recoilLastShot=-Infinity,recoilYaw=0,recoilPitch=0,lastRecoilYaw=0,lastRecoilPitch=0;
 let akViewRecoilPitch=0;
 let activeWeapon='ak',previousWeapon='knife',weaponSwitch=null,queuedWeapon=null,knifeAttackTimer=0,knifeStrikePending=false,knifeSwings=0,knifeHits=0;
@@ -1114,7 +1114,7 @@ function applyPlayerBulletHit(target,direction,distance,headshot=false,damageSca
  return true;
 }
 function gatlingMuzzle(side){
- const forwardX=Math.sin(player.yaw),forwardZ=-Math.cos(player.yaw),rightX=Math.cos(player.yaw),rightZ=Math.sin(player.yaw),offset=side*.285;
+ const forwardX=Math.sin(playerAvatarFacingAngle),forwardZ=Math.cos(playerAvatarFacingAngle),rightX=Math.cos(playerAvatarFacingAngle),rightZ=-Math.sin(playerAvatarFacingAngle),offset=side*.285;
  return V(player.x+rightX*offset+forwardX*.88,player.feetY+1.03,player.z+rightZ*offset+forwardZ*.88);
 }
 function shootGatling(){
@@ -1124,7 +1124,7 @@ function shootGatling(){
  if(length(aim)<.05)return false;
  cooldown=GATLING_FIRE_INTERVAL;gatlingCooldown=cooldown;shots++;shotFlash=.05;gatlingKick=.045;kick=Math.min(.06,kick+.012);gatlingSpin+=.44;playCombatBuffer('shot',.20,side*.035);
  if(gatlingBullets.length>=GATLING_PROJECTILE_LIMIT)gatlingBullets.shift();
- gatlingBullets.push({x:muzzle.x,y:muzzle.y,z:muzzle.z,dx:direction.x,dy:direction.y,dz:direction.z,target:lock.enemy,age:0,side});
+ gatlingFacingTarget=lock.enemy;gatlingBullets.push({x:muzzle.x,y:muzzle.y,z:muzzle.z,dx:direction.x,dy:direction.y,dz:direction.z,target:lock.enemy,age:0,side});
  return true;
 }
 function updateGatlingBullets(dt){
@@ -1963,7 +1963,7 @@ function update(dt){if(state!=='playing')return;if(!touchDevice()&&document.poin
  const forward=Number(!!keys.KeyW)-Number(!!keys.KeyS)-touchMove.z,strafe=Number(!!keys.KeyD)-Number(!!keys.KeyA)+touchMove.x;
  movePlayer(dt,forward,strafe);
  // Keep jump and floor collision independent of the changing camera height.
-  player.vy-=dt*13;player.feetY+=player.vy*dt;if(player.feetY<=0){player.feetY=0;player.vy=0;player.ground=true;}player.y=player.feetY+player.eyeHeight;if(activeWeapon==='gatling')shootGatling();else if(fire)shoot();if(state!=='playing'){updateHUD();return;}updateAKViewRecoil(dt);
+   player.vy-=dt*13;player.feetY+=player.vy*dt;if(player.feetY<=0){player.feetY=0;player.vy=0;player.ground=true;}player.y=player.feetY+player.eyeHeight;if(activeWeapon==='gatling')shootGatling();else if(fire)shoot();updatePlayerAvatarFacing(dt);if(state!=='playing'){updateHUD();return;}updateAKViewRecoil(dt);
  updateBossChests(dt);if(state!=='playing'){updateHUD();return;}
  updateEnemyBurns(dt);if(state!=='playing'){updateHUD();return;}
  const enemyFrame=advanceFreezeSkill(dt);
@@ -2754,8 +2754,16 @@ function preparePlayerAvatar(){
  }
  playerAvatarGpu={core:mesh(core),head:mesh(head),arms:arms.map(data=>mesh(data)),legs:legs.map(data=>mesh(data)),guns:mesh(guns)};
 }
-function setPlayerAvatarMatrix(out,dx=0,dy=0,dz=0,angle=player.yaw+Math.PI){
+function setPlayerAvatarMatrix(out,dx=0,dy=0,dz=0,angle=playerAvatarFacingAngle){
  const c=Math.cos(angle),s=Math.sin(angle);out[0]=c;out[1]=0;out[2]=-s;out[3]=0;out[4]=0;out[5]=1;out[6]=0;out[7]=0;out[8]=s;out[9]=0;out[10]=c;out[11]=0;out[12]=player.x+c*dx+s*dz;out[13]=player.feetY+dy;out[14]=player.z-s*dx+c*dz;out[15]=1;return out;
+}
+function updatePlayerAvatarFacing(dt){
+ if(!player)return;
+ const target=isThirdPersonGatling()&&gatlingFacingTarget?.hp>0&&enemies.includes(gatlingFacingTarget)?gatlingFacingTarget:null;
+ if(!isThirdPersonGatling())gatlingFacingTarget=null;
+ const desired=target?Math.atan2(target.x-player.x,target.z-player.z):Math.PI-player.yaw;
+ const difference=Math.atan2(Math.sin(desired-playerAvatarFacingAngle),Math.cos(desired-playerAvatarFacingAngle));
+ playerAvatarFacingAngle+=difference*(1-Math.exp(-Math.max(0,dt)*12));
 }
 function drawThirdPersonPlayer(vp,eye){
  if(!runProgress.gatling||activeWeapon!=='gatling')return;
